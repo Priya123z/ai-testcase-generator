@@ -1,0 +1,9 @@
+As a logged-in customer, I want to complete a purchase from my shopping cart so that items are shipped to my address.
+
+Acceptance criteria:
+- Cart with at least one item can proceed to checkout
+- Shipping address form validates all required fields (name, street, city, postcode, country)
+- Order summary shows correct subtotal, shipping cost, and total
+- Successful payment redirects to order confirmation page with order number
+- Failed payment shows error message and does not empty the cart
+- Empty cart prevents navigation to checkout

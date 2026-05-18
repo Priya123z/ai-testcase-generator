@@ -1,0 +1,8 @@
+As a registered user, I want to log in with my email and password so that I can access my dashboard.
+
+Acceptance criteria:
+- Valid credentials redirect to /dashboard
+- Invalid credentials show an error message below the form
+- Account locks after 3 consecutive failed login attempts
+- Empty email or password shows inline validation error
+- "Remember me" checkbox extends session to 30 days
