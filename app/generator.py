@@ -1,9 +1,12 @@
 import json
 import os
 import re
+from dotenv import load_dotenv
 from openai import OpenAI
 from .models import TestSuite
 from .prompts import SYSTEM_PROMPT_V1
+
+load_dotenv()
 
 client = OpenAI(
     api_key=os.environ.get("OPENROUTER_API_KEY") or "sk-or-placeholder",
