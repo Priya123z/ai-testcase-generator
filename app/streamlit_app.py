@@ -1,7 +1,10 @@
 import streamlit as st
+import openai
+from dotenv import load_dotenv
 from app.generator import generate_test_suite, suite_to_gherkin, suite_to_pytest
 from app.models import TestSuite
-import anthropic
+
+load_dotenv()
 
 st.set_page_config(
     page_title="AI Test-Case Generator",
@@ -10,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("🧪 AI Test-Case Generator")
-st.caption("Convert plain-text user stories into Gherkin scenarios + Pytest skeletons using Claude.")
+st.caption("Convert plain-text user stories into Gherkin scenarios + Pytest skeletons — powered by OpenRouter AI.")
 
 with st.expander("ℹ️ How to use", expanded=False):
     st.markdown("""
@@ -47,7 +50,7 @@ if generate_btn:
     if not story_input.strip():
         st.error("Please enter a user story before generating.")
     else:
-        with st.spinner("Generating test cases with Claude..."):
+        with st.spinner("Generating test cases with AI..."):
             try:
                 suite: TestSuite = generate_test_suite(story_input)
                 gherkin_output = suite_to_gherkin(suite)
@@ -81,9 +84,11 @@ if generate_btn:
                 if suite.coverage_notes:
                     st.info(f"**Coverage note:** {suite.coverage_notes}")
 
-            except anthropic.AuthenticationError:
-                st.error("❌ Authentication failed. Please set a valid ANTHROPIC_API_KEY.")
-            except anthropic.APIConnectionError:
-                st.error("❌ Could not connect to the Anthropic API. Check your internet connection.")
+            except openai.AuthenticationError:
+                st.error("❌ Authentication failed. Please set a valid OPENROUTER_API_KEY in your .env file.")
+            except openai.APIConnectionError:
+                st.error("❌ Could not connect to OpenRouter. Check your internet connection.")
             except ValueError as e:
                 st.error(f"❌ Failed to parse LLM output: {e}")
+            except Exception as e:
+                st.error(f"❌ Unexpected error: {e}")

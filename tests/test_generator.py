@@ -43,44 +43,61 @@ MOCK_RESPONSE_JSON = {
 
 
 @pytest.fixture
-def mock_anthropic_response():
+def mock_openrouter_response():
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(MOCK_RESPONSE_JSON)
     mock_msg = MagicMock()
-    mock_msg.content = [MagicMock(text=json.dumps(MOCK_RESPONSE_JSON))]
+    mock_msg.choices = [mock_choice]
     return mock_msg
 
 
 class TestGenerateTestSuite:
-    def test_returns_test_suite_instance(self, mock_anthropic_response):
+    def test_returns_test_suite_instance(self, mock_openrouter_response):
         with patch("app.generator.client") as mock_client:
-            mock_client.messages.create.return_value = mock_anthropic_response
+            mock_client.chat.completions.create.return_value = mock_openrouter_response
             result = generate_test_suite("As a user, I want to log in")
         assert isinstance(result, TestSuite)
 
-    def test_feature_name_populated(self, mock_anthropic_response):
+    def test_feature_name_populated(self, mock_openrouter_response):
         with patch("app.generator.client") as mock_client:
-            mock_client.messages.create.return_value = mock_anthropic_response
+            mock_client.chat.completions.create.return_value = mock_openrouter_response
             result = generate_test_suite("As a user, I want to log in")
         assert result.feature == "User Login"
 
-    def test_scenarios_count_matches(self, mock_anthropic_response):
+    def test_scenarios_count_matches(self, mock_openrouter_response):
         with patch("app.generator.client") as mock_client:
-            mock_client.messages.create.return_value = mock_anthropic_response
+            mock_client.chat.completions.create.return_value = mock_openrouter_response
             result = generate_test_suite("As a user, I want to log in")
         assert len(result.scenarios) == 2
 
-    def test_coverage_notes_populated(self, mock_anthropic_response):
+    def test_coverage_notes_populated(self, mock_openrouter_response):
         with patch("app.generator.client") as mock_client:
-            mock_client.messages.create.return_value = mock_anthropic_response
+            mock_client.chat.completions.create.return_value = mock_openrouter_response
             result = generate_test_suite("As a user, I want to log in")
         assert len(result.coverage_notes) > 0
 
     def test_invalid_json_raises_value_error(self):
+        mock_choice = MagicMock()
+        mock_choice.message.content = "this is not json"
         bad_msg = MagicMock()
-        bad_msg.content = [MagicMock(text="this is not json")]
+        bad_msg.choices = [mock_choice]
         with patch("app.generator.client") as mock_client:
-            mock_client.messages.create.return_value = bad_msg
+            mock_client.chat.completions.create.return_value = bad_msg
             with pytest.raises(ValueError, match="invalid JSON"):
                 generate_test_suite("test story")
+
+    def test_markdown_fenced_json_is_parsed(self, mock_openrouter_response):
+        """Models sometimes wrap JSON in ```json ... ``` — verify we strip it."""
+        fenced = f"```json\n{json.dumps(MOCK_RESPONSE_JSON)}\n```"
+        mock_choice = MagicMock()
+        mock_choice.message.content = fenced
+        mock_msg = MagicMock()
+        mock_msg.choices = [mock_choice]
+        with patch("app.generator.client") as mock_client:
+            mock_client.chat.completions.create.return_value = mock_msg
+            result = generate_test_suite("As a user, I want to log in")
+        assert isinstance(result, TestSuite)
+        assert result.feature == "User Login"
 
 
 class TestSuiteToGherkin:

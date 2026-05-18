@@ -24,3 +24,6 @@ jobs:
 
       - name: Run tests (mocked LLM — no API key needed)
         run: pytest tests/ -v
+        # OPENROUTER_API_KEY is not required here — all tests mock the OpenRouter client.
+        # To run live integration tests add OPENROUTER_API_KEY as a repository secret and
+        # expose it via: env: OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

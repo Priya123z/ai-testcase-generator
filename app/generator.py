@@ -1,32 +1,46 @@
 import json
 import os
-from anthropic import Anthropic
+import re
+from openai import OpenAI
 from .models import TestSuite
 from .prompts import SYSTEM_PROMPT_V1
 
+client = OpenAI(
+    api_key=os.environ.get("OPENROUTER_API_KEY") or "sk-or-placeholder",
+    base_url="https://openrouter.ai/api/v1",
+)
 
-client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 
-def generate_test_suite(user_story: str, model: str = "claude-3-5-sonnet-20241022") -> TestSuite:
-    """Convert a plain-text user story into a structured TestSuite.
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences that some models wrap around JSON."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+    return text.strip()
+
+
+def generate_test_suite(user_story: str, model: str = DEFAULT_MODEL) -> TestSuite:
+    """Convert a plain-text user story into a structured TestSuite via OpenRouter.
 
     Raises:
         ValueError: if the LLM returns malformed JSON or Pydantic validation fails
-        anthropic.APIError: on network or auth issues
+        openai.APIError: on network or auth issues
     """
-    message = client.messages.create(
+    message = client.chat.completions.create(
         model=model,
         max_tokens=2048,
-        system=SYSTEM_PROMPT_V1,
         messages=[
+            {"role": "system", "content": SYSTEM_PROMPT_V1},
             {
                 "role": "user",
-                "content": f"Generate test cases for this user story:\n\n{user_story}"
-            }
-        ]
+                "content": f"Generate test cases for this user story:\n\n{user_story}",
+            },
+        ],
     )
-    raw = message.content[0].text.strip()
+    raw = _strip_fences(message.choices[0].message.content)
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
