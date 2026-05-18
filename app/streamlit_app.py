@@ -1,3 +1,14 @@
+import sys
+import os
+
+# When Streamlit runs `app/streamlit_app.py` it adds `app/` to sys.path
+# but not the project root, so `from app.generator import ...` would fail.
+# This adds the project root so the `app` package is resolvable in both
+# run modes: `streamlit run app/streamlit_app.py` and direct module import.
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import streamlit as st
 import openai
 from dotenv import load_dotenv
