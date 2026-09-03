@@ -179,7 +179,7 @@ GROQ_API_KEY=gsk_... pytest   # with key: 25 passed
 ```
 
 Last runs: **25 passed in 7.4s** with a key, **5 passed / 20 skipped** on a
-clean clone with none. CI on the last commit: **22 passed**, integration tests
+clean clone with none. CI on the last commit: **25 passed**, integration tests
 included.
 
 ### Making CI run the live tests
@@ -241,7 +241,13 @@ ai-testcase-generator/
 |  '- pages.yml           publishes site/
 |- .env.example
 |- requirements.txt       library + tests
-'- requirements-ui.txt    adds streamlit
+|- requirements-ui.txt    adds streamlit
+'- DEEP_DIVE.md           architecture, design decisions, and the questions
+                          people ask about it
 ```
+
+[`DEEP_DIVE.md`](DEEP_DIVE.md) is the long version: the layer boundaries and why
+they are where they are, the model hierarchy, what the tests actually assert, and
+twenty-five questions with answers.
 
 MIT. Built by Priya Bhagoriya — [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)
