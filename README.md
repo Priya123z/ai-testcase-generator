@@ -1,38 +1,68 @@
 # AI Test-Case Generator
 
+Paste a requirement in plain English. Get back Gherkin scenarios and Pytest
+skeletons you can drop into a suite.
+
 [![Tests](https://github.com/Priya123z/ai-testcase-generator/actions/workflows/tests.yml/badge.svg)](https://github.com/Priya123z/ai-testcase-generator/actions/workflows/tests.yml)
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)
-![Model](https://img.shields.io/badge/model-gpt--4o--mini-green.svg)
+![Model](https://img.shields.io/badge/model-gpt--oss--120b%20on%20Groq-0a6e4e.svg)
 
-A Python tool that converts plain-text user stories into structured **Gherkin BDD scenarios** and **Pytest test skeletons** using an LLM via [Groq](https://groq.com), falling back to [OpenRouter](https://openrouter.ai). Pydantic models enforce structured output — if the model returns invalid JSON the generator raises a `ValueError` instead of silently producing broken tests. Ships with a Streamlit web UI for QA team self-service.
+[**Try it in a browser**](https://priya123z.github.io/#demos) — no install, runs on your own free key.
+
+---
+
+## When you would actually reach for this
+
+The honest answer is: at the start of test design, not instead of it.
+
+- **A story lands in refinement and you have twenty minutes.** Paste the
+  acceptance criteria and you get a first list of scenarios. Most will be
+  obvious; the value is that the obvious ones are already written down and you
+  can spend your twenty minutes on the two that are not.
+- **You are reviewing someone else's test plan.** Run the same story through
+  this and diff the two lists. What the model found and the plan missed is
+  usually worth a conversation.
+- **You inherited an untested module with a written spec.** This turns the spec
+  into a skeleton you can fill in, which is a much easier place to start than an
+  empty file.
+- **Onboarding a junior tester.** The `coverage_notes` field says what it chose
+  *not* to cover, which is a decent teaching device.
+
+Where **not** to use it: anything where the edge cases come from domain
+knowledge rather than the text. It has never seen your billing rules. It will
+write a plausible-looking scenario about proration and get it wrong.
 
 ---
 
 ## How it works
 
 ```
-User Story (plain text)
-        ↓
-   Groq (openai/gpt-oss-120b)
-        ↓  returns structured JSON
+Requirement (plain text)
+        |
+   Groq: openai/gpt-oss-120b, JSON mode
+        |  falls back to OpenRouter if Groq is unavailable
    Pydantic TestSuite validation
-        ↓
-   Three export formats:
-   • Gherkin .feature file
-   • Pytest .py skeleton
-   • Raw JSON
+        |  invalid structure raises here, not three files later
+   Gherkin .feature  |  Pytest .py  |  raw JSON
 ```
 
-1. Paste a user story with acceptance criteria
-2. The AI generates 3–7 Gherkin scenarios (happy path + negative paths + edge cases) and matching Pytest function skeletons
-3. A Pydantic model (`TestSuite`) validates every field — hallucinated structures are rejected before they reach you
-4. Download the `.feature` or `.py` file, or copy the JSON
+1. Paste a requirement with its acceptance criteria.
+2. The model writes 3–7 scenarios — happy path, negative paths, edge cases —
+   and a matching Pytest function skeleton for each.
+3. `TestSuite` validates every field. A hallucinated structure is rejected
+   before it reaches you, so you never get a `.feature` file that will not
+   parse.
+4. Download the `.feature` or the `.py`, or copy the JSON.
+
+The Pydantic step is the part that makes this usable rather than a toy. A model
+that returns almost-right JSON produces test files that fail in confusing ways
+much later; failing at the boundary is worth the extra class.
 
 ---
 
 ## Example output
 
-Given the login story in `examples/login_story.txt`:
+From the login story in `examples/login_story.txt`:
 
 ```gherkin
 Feature: User Login
@@ -68,100 +98,112 @@ cd ai-testcase-generator
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env
-# Edit .env and add your OPENROUTER_API_KEY
+cp .env.example .env          # then put a Groq key in it, see below
 streamlit run app/streamlit_app.py
 ```
 
-Open http://localhost:8501, paste a user story, click **Generate**.
+Open http://localhost:8501, paste a requirement, press **Generate**.
 
----
+You can also skip the `.env` and paste a key into the UI, which is what the
+hosted demo does.
 
-## Get an API key
+## Getting a key
 
-1. Sign up free at [openrouter.ai](https://openrouter.ai)
-2. Go to **Keys** → **Create Key**
-3. Copy the key (starts with `sk-or-v1-...`)
-4. Paste it into your `.env` file:
-   ```
-   OPENROUTER_API_KEY=sk-or-v1-your-key-here
-   ```
+Groq is the primary provider. A free key takes about a minute and needs no card:
 
-The default is **`openai/gpt-oss-120b`** on Groq, whose free tier allows 1000 requests a day and supports a real JSON mode. If `OPENROUTER_API_KEY` is also set it is tried when Groq fails. You can override the model:
+1. Sign in at [console.groq.com/keys](https://console.groq.com/keys)
+2. **Create API Key**, copy it (starts with `gsk_`)
+3. Put it in `.env`:
+
+```
+GROQ_API_KEY=gsk_your_key_here
+```
+
+The free tier allows 1000 requests a day and supports a real JSON mode, which
+is why it is the default. If you also set `OPENROUTER_API_KEY` it is tried when
+Groq is unavailable. Free tiers rate limit without warning, which is why there
+is a fallback and why each provider gets a few attempts.
+
+Override the model per call:
 
 ```python
-suite = generate_test_suite(story, model="anthropic/claude-3-haiku")
+suite = generate_test_suite(story, model="llama-3.3-70b-versatile")
 ```
-
-Free tiers rate limit without warning, which is why there is a fallback and why each provider is retried a few times.
 
 ---
 
-## Run tests
+## Tests
 
-The suite splits in two.
+The suite splits in two, deliberately.
 
-The **contract tests** patch the network. They pin the shaping logic and run anywhere with no key.
+**Contract tests** patch the network. They pin the shaping and serialising logic
+and run anywhere with no key, so `pytest` works on a fresh clone.
 
-The **integration tests** call a real model and are skipped when no key is set, so `pytest` works on a fresh clone. They assert on properties that must hold for any sensible output — step keywords are valid Gherkin, function names are snake_case — rather than exact text, because the output is not deterministic. All of them share one API call.
-
-```
-$ pytest -q                     # no key: 2 passed, 20 skipped
-$ GROQ_API_KEY=gsk_... pytest -q # with a key: 22 passed
-```
+**Integration tests** call a real model. They skip when no key is set. They
+assert on properties that hold for *any* sensible answer — step keywords are
+valid Gherkin, function names are snake_case, scenario count is in range —
+rather than on exact text, because the output is not deterministic. Asserting on
+exact strings against a live model gives you a suite that fails for no reason.
+All twenty share one API call.
 
 ```bash
-pytest tests/ -v
+pytest -q                        # no key:   2 passed, 20 skipped
+GROQ_API_KEY=gsk_... pytest -q   # with key: 22 passed
 ```
 
----
+Last local run with a key: **22 passed in 12.8s**.
 
-## Add API key to GitHub Actions
+### Making CI run the live tests
 
-For live integration tests in CI, add your key as a repository secret:
+CI passes both `GROQ_API_KEY` and `OPENROUTER_API_KEY` through to pytest. Add
+either as a repository secret and the integration tests start running:
 
-1. GitHub repo → **Settings** → **Secrets and variables** → **Actions**
-2. Click **New repository secret**
-3. Name: `OPENROUTER_API_KEY`, Value: your key
-4. Reference it in your workflow: `env: OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}`
+1. Repo → **Settings** → **Secrets and variables** → **Actions**
+2. **New repository secret**, name it `GROQ_API_KEY`
 
-CI sets this secret so the integration tests run. Without it they skip and the contract tests still pass, which is what happens on a fork.
+Without it the integration tests skip and the contract tests still pass, so the
+build stays green on a fork with no access to secrets. That is the point of the
+split.
 
 ---
 
 ## Prompt versioning
 
-`app/prompts.py` contains versioned system prompts (`SYSTEM_PROMPT_V1`). Changing the prompt strategy is a one-file change — the rest of the codebase is decoupled from prompt content, so iterating on prompt quality does not scatter changes across modules.
+`app/prompts.py` holds versioned system prompts (`SYSTEM_PROMPT_V1`). Changing
+prompt strategy is a one-file change — nothing else in the codebase knows what
+the prompt says — so you can iterate on quality without touching modules.
 
 ---
 
 ## Honest caveats
 
-Generated tests are starting points for QA review, not a replacement for human test design. The generator excels at happy-path and obvious negative-path scenarios but misses domain-specific edge cases that require business context. Every response includes a `coverage_notes` field that explicitly calls out what it chose not to generate.
+Generated tests are a starting point for review, not a replacement for test
+design. It is good at the happy path and the obvious negative paths, and it
+misses edge cases that need business context. Every answer carries a
+`coverage_notes` field that says what it left out; read it.
+
+Two runs on the same requirement will differ. That is the nature of the thing,
+and it is why the tests assert on properties rather than output.
 
 ---
 
-## Project structure
+## Layout
 
 ```
 ai-testcase-generator/
-├── app/
-│   ├── generator.py        # Provider fallback, retries, JSON parse, serialisers
-│   ├── models.py           # Pydantic models (TestSuite, GherkinScenario, …)
-│   ├── prompts.py          # Versioned system prompts (SYSTEM_PROMPT_V1)
-│   └── streamlit_app.py    # Streamlit web UI
-├── tests/
-│   └── test_generator.py   # 22 tests: 2 contract (no key), 20 integration (skipped without one)
-├── examples/
-│   ├── login_story.txt
-│   └── checkout_story.txt
-├── .github/workflows/
-│   └── tests.yml           # CI: pytest on push/PR
-├── .env.example            # Copy to .env and add your OPENROUTER_API_KEY
-├── requirements.txt
-└── README.md
+|- app/
+|  |- generator.py        provider fallback, retries, JSON parse, serialisers
+|  |- models.py           Pydantic models (TestSuite, GherkinScenario, ...)
+|  |- prompts.py          versioned system prompts
+|  '- streamlit_app.py    the web UI
+|- tests/
+|  '- test_generator.py   22 tests: 2 contract, 20 integration
+|- examples/
+|  |- login_story.txt
+|  '- checkout_story.txt
+|- .github/workflows/tests.yml
+|- .env.example
+'- requirements.txt
 ```
 
----
-
-Built by Priya Bhagoriya | [LinkedIn](https://linkedin.com/in/priya-bhagoriya)
+MIT. Built by Priya Bhagoriya — [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)

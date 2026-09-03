@@ -22,7 +22,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run integration tests
+      - name: Run tests
         env:
+          # Groq is the primary provider, so its key has to be here or the
+          # integration tests skip even when the secret is set. OpenRouter is
+          # the fallback. Neither is required: without them the contract tests
+          # still run and pass, which is what happens on a fork.
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: pytest tests/ -v
