@@ -25,6 +25,12 @@ class PytestTestCase(BaseModel):
 
 
 class TestSuite(BaseModel):
+    # Not a test class, despite the name. pytest collects anything matching Test*
+    # that it finds in a test module's namespace, and warned about this one on
+    # every single run: "cannot collect test class 'TestSuite'". This is the flag
+    # pytest documents for saying so.
+    __test__ = False
+
     feature: str = Field(..., description="Feature name derived from the user story")
     scenarios: List[GherkinScenario]
     pytest_cases: List[PytestTestCase]
