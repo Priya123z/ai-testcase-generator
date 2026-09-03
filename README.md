@@ -7,7 +7,7 @@ skeletons you can drop into a suite.
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Model](https://img.shields.io/badge/model-gpt--oss--120b%20on%20Groq-0a6e4e.svg)
 
-[**Try it in a browser**](https://priya123z.github.io/#demos) — no install, runs on your own free key.
+[**Try it in a browser**](https://priya123z.github.io/ai-testcase-generator/) — no install, no server, runs on your own free key.
 
 ---
 
@@ -89,7 +89,15 @@ Feature: User Login
 
 ---
 
-## Quick start
+## Three ways to run it
+
+**1. In your browser, nothing installed.**
+[priya123z.github.io/ai-testcase-generator](https://priya123z.github.io/ai-testcase-generator/)
+is a static page that calls Groq directly with a key you paste in. There is no
+server in that path, so nothing is proxied, nothing is stored, and the key is
+gone when the tab closes. With no key it shows a saved answer from a real run.
+
+**2. As a library.**
 
 ```bash
 git clone https://github.com/Priya123z/ai-testcase-generator.git
@@ -97,15 +105,28 @@ cd ai-testcase-generator
 
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
 
+```python
+from app.generator import generate_test_suite, suite_to_gherkin, suite_to_pytest
+
+suite = generate_test_suite(open("examples/login_story.txt").read())
+print(suite_to_gherkin(suite))
+```
+
+**3. As a local app**, for a team that wants a form rather than an import:
+
+```bash
+pip install -r requirements-ui.txt
 cp .env.example .env          # then put a Groq key in it, see below
 streamlit run app/streamlit_app.py
 ```
 
 Open http://localhost:8501, paste a requirement, press **Generate**.
 
-You can also skip the `.env` and paste a key into the UI, which is what the
-hosted demo does.
+`streamlit` is in `requirements-ui.txt` rather than `requirements.txt` on
+purpose — only `app/streamlit_app.py` imports it, and pulling a web framework in
+order to run a test suite that never touches one is a slow install for nothing.
 
 ## Getting a key
 
@@ -146,12 +167,20 @@ rather than on exact text, because the output is not deterministic. Asserting on
 exact strings against a live model gives you a suite that fails for no reason.
 All twenty share one API call.
 
+There is a third group: the browser demo reimplements the two serialisers in
+JavaScript, because that page has no Python to call. Real duplication, so it is
+pinned — `tests/test_browser_parity.py` runs both implementations over the same
+suite and requires byte-identical output. It skips when `node` is absent, so a
+clean clone still passes.
+
 ```bash
-pytest -q                        # no key:   2 passed, 20 skipped
-GROQ_API_KEY=gsk_... pytest -q   # with key: 22 passed
+pytest                        # no key:   5 passed, 20 skipped
+GROQ_API_KEY=gsk_... pytest   # with key: 25 passed
 ```
 
-Last local run with a key: **22 passed in 12.8s**.
+Last runs: **25 passed in 7.4s** with a key, **5 passed / 20 skipped** on a
+clean clone with none. CI on the last commit: **22 passed**, integration tests
+included.
 
 ### Making CI run the live tests
 
@@ -196,14 +225,23 @@ ai-testcase-generator/
 |  |- models.py           Pydantic models (TestSuite, GherkinScenario, ...)
 |  |- prompts.py          versioned system prompts
 |  '- streamlit_app.py    the web UI
+|- site/                  the browser demo, published to GitHub Pages
+|  |- index.html
+|  |- app.js              talks to Groq directly; mirrors the two serialisers
+|  |- style.css
+|  '- samples/login.json  a real answer, shown when there is no key
 |- tests/
-|  '- test_generator.py   22 tests: 2 contract, 20 integration
+|  |- test_generator.py       22 tests: 2 contract, 20 integration
+|  '- test_browser_parity.py  3 tests: the JS and Python output must match
 |- examples/
 |  |- login_story.txt
 |  '- checkout_story.txt
-|- .github/workflows/tests.yml
+|- .github/workflows/
+|  |- tests.yml
+|  '- pages.yml           publishes site/
 |- .env.example
-'- requirements.txt
+|- requirements.txt       library + tests
+'- requirements-ui.txt    adds streamlit
 ```
 
 MIT. Built by Priya Bhagoriya — [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>AI Test-Case Generator — requirement to Gherkin and Pytest</title>
+<meta name="description" content="Paste a requirement in plain English, get Gherkin scenarios and Pytest skeletons. Runs in your browser on a free Groq key — no install, no server. By Priya Bhagoriya.">
+<link rel="canonical" href="https://priya123z.github.io/ai-testcase-generator/">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%230a6e4e%22/><path d=%22M9 16.5l4.6 4.6L23 11.7%22 stroke=%22white%22 stroke-width=%223.4%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://priya123z.github.io/ai-testcase-generator/">
+<meta property="og:title" content="AI Test-Case Generator — requirement to Gherkin and Pytest">
+<meta property="og:description" content="Paste a requirement, get Gherkin scenarios and Pytest skeletons. Runs in your browser on a free key.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<a class="skip" href="#try">Skip to the demo</a>
+
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="wordmark" href="https://priya123z.github.io/">Priya Bhagoriya <span>— SDET</span></a>
+    <nav class="topnav">
+      <a href="#try">Try it</a>
+      <a href="#how">How it works</a>
+      <a href="https://github.com/Priya123z/ai-testcase-generator">Repository</a>
+      <a class="btn btn-line btn-sm" href="https://priya123z.github.io/">Portfolio</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <p class="role">AI Test-Case Generator</p>
+      <h1>A requirement in. Gherkin and Pytest out.</h1>
+      <p class="lead">
+        Paste an acceptance criterion and get scenarios you can drop into a suite,
+        with a matching Pytest skeleton for each. It runs in this tab on your own free
+        Groq key — no install, no server, and the key never leaves your machine.
+      </p>
+    </div>
+  </section>
+
+  <section class="section" id="try">
+    <div class="wrap">
+      <div class="panel">
+        <label for="story">The requirement. Acceptance criteria help — the more concrete you are, the less it has to guess.</label>
+        <textarea id="story" rows="11" spellcheck="false">As a registered user, I want to log in with my email and password so that I can access my dashboard.
+
+Acceptance criteria:
+- Valid credentials redirect to /dashboard
+- Account locks after 3 consecutive failed attempts
+- Empty email or password shows an inline validation error
+- "Remember me" keeps the session for 30 days, otherwise it ends when the browser closes</textarea>
+
+        <div class="runrow">
+          <button class="btn btn-solid" id="run">Generate test cases</button>
+          <p class="mode" id="mode">saved answer — add a key to run live</p>
+        </div>
+
+        <p class="err" id="error" hidden></p>
+
+        <div class="result" id="result" hidden>
+          <p class="stamp" id="stamp"></p>
+
+          <div class="result-head">
+            <h2 id="feature"></h2>
+            <span class="countline" id="countline"></span>
+          </div>
+
+          <div class="tabs" role="tablist" aria-label="Output format">
+            <button class="tab on" data-pane="gherkin" role="tab" aria-selected="true">Gherkin</button>
+            <button class="tab" data-pane="pytest" role="tab" aria-selected="false">Pytest</button>
+            <button class="tab" data-pane="json" role="tab" aria-selected="false">JSON</button>
+          </div>
+
+          <div class="pane" data-pane="gherkin"><pre id="gherkin"></pre></div>
+          <div class="pane" data-pane="pytest" hidden><pre id="pytest"></pre></div>
+          <div class="pane" data-pane="json" hidden><pre id="json"></pre></div>
+
+          <div class="dlrow">
+            <button class="btn btn-line btn-sm" data-dl="feature">Download .feature</button>
+            <button class="btn btn-line btn-sm" data-dl="py">Download the Pytest file</button>
+            <button class="btn btn-line btn-sm" data-dl="json">Download JSON</button>
+          </div>
+
+          <div class="notes" id="notes-wrap" hidden>
+            <strong>What it chose not to cover</strong>
+            <p id="notes"></p>
+          </div>
+        </div>
+
+        <details class="keyrow">
+          <summary>Run it live with your own key</summary>
+          <p>
+            Get a free key at
+            <a class="linkline" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a> —
+            no card, about a minute. Paste it below and your browser calls Groq directly. There is
+            no server in that path, so nothing is proxied through me, nothing is stored, and the
+            key is gone when you close the tab.
+          </p>
+          <input id="key" type="password" placeholder="gsk_..." autocomplete="off" spellcheck="false" aria-label="Your Groq API key">
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="how">
+    <div class="wrap">
+      <h2 style="margin-bottom:24px">How it works</h2>
+      <div class="how">
+        <div class="how-card">
+          <h3>The model answers in JSON</h3>
+          <p>
+            Groq's <code>json_object</code> mode means there are no markdown fences to scrape.
+            The prompt carries the schema, and <code>openai/gpt-oss-120b</code> fills it in.
+          </p>
+        </div>
+        <div class="how-card">
+          <h3>Then it gets validated</h3>
+          <p>
+            Every field is checked before you see it — step keywords must be real Gherkin,
+            test names must be snake_case. Almost-right JSON fails here rather than becoming
+            a <code>.feature</code> file that will not parse.
+          </p>
+        </div>
+        <div class="how-card">
+          <h3>With no key, you get a real answer
+          </h3>
+          <p>
+            Saved from an actual run and labelled as saved. The page never shows you a broken
+            widget, and it costs nothing to keep running.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="closer">
+        <h2>The same thing, three ways</h2>
+        <p>
+          This page is the browser version. The repository has the Python library behind it, a
+          Streamlit app for running it inside a team, and a test suite split into contract tests
+          that patch the network and integration tests that assert properties true of any valid
+          answer — because the output is never the same twice.
+        </p>
+        <div class="dlrow">
+          <a class="btn btn-line" href="https://github.com/Priya123z/ai-testcase-generator">Read the code</a>
+          <a class="btn btn-line" href="https://priya123z.github.io/">More of my work</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-in">
+    <span>© <span id="year">2026</span> Priya Bhagoriya</span>
+    <span>SDET and AI Test Engineer, Mumbai</span>
+    <a href="https://priya123z.github.io/">Portfolio</a>
+  </div>
+</footer>
+
+<script src="app.js?v=1"></script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+name: deploy pages
+
+# Publishes the browser demo. It calls Groq directly from the page using whatever
+# key the visitor pastes in, so there is nothing to host and no secret needed
+# here — with no key the page shows a saved answer from a real run.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the saved answer is still valid
+        # The no-key path is the one most visitors see. If this file ever stops
+        # matching what the page expects, the demo silently shows nothing.
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, sys
+          d = json.loads(pathlib.Path("site/samples/login.json").read_text())
+          assert d.get("feature"), "no feature name"
+          assert d.get("scenarios"), "no scenarios"
+          allowed = {"Given", "When", "Then", "And", "But"}
+          for s in d["scenarios"]:
+              assert s.get("name") and s.get("steps"), f"empty scenario {s.get('name')!r}"
+              for st in s["steps"]:
+                  assert st["keyword"] in allowed, f"bad keyword {st['keyword']!r}"
+          for c in d.get("pytest_cases", []):
+              assert c["function_name"].startswith("test_"), c["function_name"]
+          print(f"saved answer ok: {len(d['scenarios'])} scenarios, "
+                f"{len(d.get('pytest_cases', []))} pytest cases")
+          PY
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

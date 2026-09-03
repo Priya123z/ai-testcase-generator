@@ -1,0 +1,348 @@
+{
+  "feature": "User login",
+  "scenarios": [
+    {
+      "name": "Successful login redirects to dashboard",
+      "steps": [
+        {
+          "keyword": "Given",
+          "text": "a registered user with email \"alice@example.com\" and password \"SecurePass123\""
+        },
+        {
+          "keyword": "And",
+          "text": "the login page is open"
+        },
+        {
+          "keyword": "When",
+          "text": "the user enters email \"alice@example.com\" and password \"SecurePass123\""
+        },
+        {
+          "keyword": "And",
+          "text": "the \"Remember me\" checkbox is unchecked"
+        },
+        {
+          "keyword": "And",
+          "text": "the user clicks the \"Login\" button"
+        },
+        {
+          "keyword": "Then",
+          "text": "the user is redirected to \"/dashboard\""
+        },
+        {
+          "keyword": "And",
+          "text": "a session cookie \"session_id\" is set with default expiry"
+        }
+      ],
+      "tags": [
+        "happy_path"
+      ]
+    },
+    {
+      "name": "Login with invalid password shows error message",
+      "steps": [
+        {
+          "keyword": "Given",
+          "text": "a registered user with email \"bob@example.com\" and password \"CorrectPass!\""
+        },
+        {
+          "keyword": "And",
+          "text": "the login page is open"
+        },
+        {
+          "keyword": "When",
+          "text": "the user enters email \"bob@example.com\" and password \"WrongPass!\""
+        },
+        {
+          "keyword": "And",
+          "text": "the user clicks the \"Login\" button"
+        },
+        {
+          "keyword": "Then",
+          "text": "an error message \"Invalid email or password\" is displayed below the form"
+        }
+      ],
+      "tags": [
+        "negative",
+        "invalid_credentials"
+      ]
+    },
+    {
+      "name": "Login with non\u2011existent email shows error message",
+      "steps": [
+        {
+          "keyword": "Given",
+          "text": "the login page is open"
+        },
+        {
+          "keyword": "When",
+          "text": "the user enters email \"nonexistent@example.com\" and password \"AnyPass123\""
+        },
+        {
+          "keyword": "And",
+          "text": "the user clicks the \"Login\" button"
+        },
+        {
+          "keyword": "Then",
+          "text": "an error message \"Invalid email or password\" is displayed below the form"
+        }
+      ],
+      "tags": [
+        "negative",
+        "invalid_credentials"
+      ]
+    },
+    {
+      "name": "Empty email shows inline validation error",
+      "steps": [
+        {
+          "keyword": "Given",
+          "text": "the login page is open"
+        },
+        {
+          "keyword": "When",
+          "text": "the user leaves the email field empty and enters password \"SomePass1\""
+        },
+        {
+          "keyword": "And",
+          "text": "the user clicks the \"Login\" button"
+        },
+        {
+          "keyword": "Then",
+          "text": "an inline validation error \"Email is required\" is shown next to the email field"
+        }
+      ],
+      "tags": [
+        "negative",
+        "validation"
+      ]
+    },
+    {
+      "name": "Empty password shows inline validation error",
+      "steps": [
+        {
+          "keyword": "Given",
+          "text": "the login page is open"
+        },
+        {
+          "keyword": "When",
+          "text": "the user enters email \"carol@example.com\" and leaves the password field empty"
+        },
+        {
+          "keyword": "And",
+          "text": "the user clicks the \"Login\" button"
+        },
+        {
+          "keyword": "Then",
+          "text": "an inline validation error \"Password is required\" is shown next to the password field"
+        }
+      ],
+      "tags": [
+        "negative",
+        "validation"
+      ]
+    },
+    {
+      "name": "Account locks after three consecutive failed attempts",
+      "steps": [
+        {
+          "keyword": "Given",
+          "text": "a registered user with email \"dave@example.com\" and password \"RightPass#\""
+        },
+        {
+          "keyword": "And",
+          "text": "the login page is open"
+        },
+        {
+          "keyword": "When",
+          "text": "the user enters email \"dave@example.com\" and password \"Wrong1\" and clicks the \"Login\" button"
+        },
+        {
+          "keyword": "And",
+          "text": "the user repeats the above step two more times with passwords \"Wrong2\" and \"Wrong3\""
+        },
+        {
+          "keyword": "Then",
+          "text": "the account is locked and an error message \"Account locked due to multiple failed login attempts\" is displayed"
+        }
+      ],
+      "tags": [
+        "negative",
+        "account_lock"
+      ]
+    },
+    {
+      "name": "Remember me extends session to 30 days",
+      "steps": [
+        {
+          "keyword": "Given",
+          "text": "a registered user with email \"eve@example.com\" and password \"Pass2024!\""
+        },
+        {
+          "keyword": "And",
+          "text": "the login page is open"
+        },
+        {
+          "keyword": "When",
+          "text": "the user enters email \"eve@example.com\" and password \"Pass2024!\""
+        },
+        {
+          "keyword": "And",
+          "text": "the \"Remember me\" checkbox is checked"
+        },
+        {
+          "keyword": "And",
+          "text": "the user clicks the \"Login\" button"
+        },
+        {
+          "keyword": "Then",
+          "text": "the user is redirected to \"/dashboard\""
+        },
+        {
+          "keyword": "And",
+          "text": "the session cookie \"session_id\" has an expiry of 30 days"
+        }
+      ],
+      "tags": [
+        "happy_path",
+        "remember_me"
+      ]
+    }
+  ],
+  "pytest_cases": [
+    {
+      "function_name": "test_successful_login_redirects_to_dashboard",
+      "docstring": "Verify that a user with valid credentials is redirected to the dashboard and receives a default session cookie.",
+      "steps": [
+        {
+          "description": "Create a registered user in the test database",
+          "code": "create_user(email='alice@example.com', password='SecurePass123')"
+        },
+        {
+          "description": "GET the login page to establish session",
+          "code": "client.get('/login')"
+        },
+        {
+          "description": "POST valid credentials without remember me",
+          "code": "response = client.post('/login', data={'email':'alice@example.com','password':'SecurePass123','remember_me':False})"
+        },
+        {
+          "description": "Assert redirect to dashboard",
+          "code": "assert response.status_code == 302 and response.headers['Location'] == '/dashboard'"
+        },
+        {
+          "description": "Assert session cookie exists with default expiry",
+          "code": "assert 'session_id' in response.headers.get('Set-Cookie') and 'Expires' not in response.headers.get('Set-Cookie')"
+        }
+      ]
+    },
+    {
+      "function_name": "test_login_invalid_password_shows_error",
+      "docstring": "Ensure that submitting an incorrect password displays the generic invalid\u2011credentials error message.",
+      "steps": [
+        {
+          "description": "Create a registered user",
+          "code": "create_user(email='bob@example.com', password='CorrectPass!')"
+        },
+        {
+          "description": "POST login with wrong password",
+          "code": "response = client.post('/login', data={'email':'bob@example.com','password':'WrongPass!'})"
+        },
+        {
+          "description": "Assert status code 200 (form re\u2011rendered)",
+          "code": "assert response.status_code == 200"
+        },
+        {
+          "description": "Assert error message present in response body",
+          "code": "assert b'Invalid email or password' in response.data"
+        }
+      ]
+    },
+    {
+      "function_name": "test_login_nonexistent_email_shows_error",
+      "docstring": "Check that using an email not present in the system returns the same generic error message.",
+      "steps": [
+        {
+          "description": "POST login with unknown email",
+          "code": "response = client.post('/login', data={'email':'nonexistent@example.com','password':'AnyPass123'})"
+        },
+        {
+          "description": "Assert status code 200 and error message",
+          "code": "assert response.status_code == 200 and b'Invalid email or password' in response.data"
+        }
+      ]
+    },
+    {
+      "function_name": "test_empty_email_shows_inline_validation",
+      "docstring": "Validate that leaving the email field empty triggers an inline validation error.",
+      "steps": [
+        {
+          "description": "POST login with empty email",
+          "code": "response = client.post('/login', data={'email':'','password':'SomePass1'})"
+        },
+        {
+          "description": "Assert validation error in response",
+          "code": "assert response.status_code == 200 and b'Email is required' in response.data"
+        }
+      ]
+    },
+    {
+      "function_name": "test_empty_password_shows_inline_validation",
+      "docstring": "Validate that leaving the password field empty triggers an inline validation error.",
+      "steps": [
+        {
+          "description": "POST login with empty password",
+          "code": "response = client.post('/login', data={'email':'carol@example.com','password':''})"
+        },
+        {
+          "description": "Assert validation error in response",
+          "code": "assert response.status_code == 200 and b'Password is required' in response.data"
+        }
+      ]
+    },
+    {
+      "function_name": "test_account_locks_after_three_failed_attempts",
+      "docstring": "Simulate three consecutive failed logins and verify the account becomes locked with an appropriate message.",
+      "steps": [
+        {
+          "description": "Create a registered user",
+          "code": "create_user(email='dave@example.com', password='RightPass#')"
+        },
+        {
+          "description": "Attempt login with wrong password three times",
+          "code": "for pwd in ['Wrong1','Wrong2','Wrong3']:\n    client.post('/login', data={'email':'dave@example.com','password':pwd})"
+        },
+        {
+          "description": "Attempt a fourth login with correct password",
+          "code": "response = client.post('/login', data={'email':'dave@example.com','password':'RightPass#'})"
+        },
+        {
+          "description": "Assert account locked error message",
+          "code": "assert response.status_code == 200 and b'Account locked due to multiple failed login attempts' in response.data"
+        }
+      ]
+    },
+    {
+      "function_name": "test_remember_me_extends_session",
+      "docstring": "Confirm that selecting 'Remember me' sets a session cookie with a 30\u2011day expiry.",
+      "steps": [
+        {
+          "description": "Create a registered user",
+          "code": "create_user(email='eve@example.com', password='Pass2024!')"
+        },
+        {
+          "description": "POST login with remember_me flag true",
+          "code": "response = client.post('/login', data={'email':'eve@example.com','password':'Pass2024!','remember_me':True})"
+        },
+        {
+          "description": "Assert redirect to dashboard",
+          "code": "assert response.status_code == 302 and response.headers['Location'] == '/dashboard'"
+        },
+        {
+          "description": "Assert cookie expiry is approximately 30 days",
+          "code": "cookie = response.headers.get('Set-Cookie')\nassert 'Expires=' in cookie and '30' in cookie"
+        }
+      ]
+    }
+  ],
+  "coverage_notes": "Tests cover successful login, invalid credentials, missing fields, account lockout, and the remember\u2011me session extension. Password\u2011reset flows, multi\u2011factor authentication, rate\u2011limiting beyond lockout, UI rendering details, and persistence of the 30\u2011day cookie across browser restarts are out of scope for this story."
+}
