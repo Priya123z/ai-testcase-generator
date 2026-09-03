@@ -12,7 +12,12 @@ if _project_root not in sys.path:
 import streamlit as st
 import openai
 from dotenv import load_dotenv
-from app.generator import generate_test_suite, suite_to_gherkin, suite_to_pytest
+from app.generator import (
+    available_providers,
+    generate_test_suite,
+    suite_to_gherkin,
+    suite_to_pytest,
+)
 from app.models import TestSuite
 
 load_dotenv()
@@ -24,7 +29,7 @@ st.set_page_config(
 )
 
 st.title("🧪 AI Test-Case Generator")
-st.caption("Convert plain-text user stories into Gherkin scenarios + Pytest skeletons — powered by OpenRouter AI.")
+st.caption("Turn a user story into Gherkin scenarios and Pytest skeletons.")
 
 with st.expander("ℹ️ How to use", expanded=False):
     st.markdown("""
@@ -36,6 +41,22 @@ with st.expander("ℹ️ How to use", expanded=False):
 **Note:** Generated tests are starting points for QA review, not a replacement for human test design.
 The generator works best with stories that include clear acceptance criteria.
 """)
+
+with st.sidebar:
+    st.subheader("Model access")
+    user_key = st.text_input(
+        "Groq API key",
+        type="password",
+        help="Optional. Leave blank to use the key this app is configured with. "
+             "Get a free one at console.groq.com/keys — it is only held for this run.",
+    ).strip()
+
+    if user_key:
+        st.caption("Using your key.")
+    elif available_providers():
+        st.caption("Using this app's shared key. Paste your own if it is rate limited.")
+    else:
+        st.warning("No key configured. Paste one above to use the app.")
 
 st.subheader("User Story")
 example = """As a registered user, I want to log in with my email and password so that I can access my dashboard.
@@ -63,7 +84,7 @@ if generate_btn:
     else:
         with st.spinner("Generating test cases with AI..."):
             try:
-                suite: TestSuite = generate_test_suite(story_input)
+                suite: TestSuite = generate_test_suite(story_input, api_key=user_key or None)
                 gherkin_output = suite_to_gherkin(suite)
                 pytest_output = suite_to_pytest(suite)
 
@@ -96,10 +117,14 @@ if generate_btn:
                     st.info(f"**Coverage note:** {suite.coverage_notes}")
 
             except openai.AuthenticationError:
-                st.error("❌ Authentication failed. Please set a valid OPENROUTER_API_KEY in your .env file.")
+                st.error("That key was rejected. Check it at console.groq.com/keys.")
             except openai.APIConnectionError:
-                st.error("❌ Could not connect to OpenRouter. Check your internet connection.")
+                st.error("Could not reach the provider. Check your connection.")
+            except RuntimeError as e:
+                st.error(str(e))
+                st.caption(
+                    "Free tiers rate limit without warning. Waiting a moment or "
+                    "pasting your own key in the sidebar usually clears it."
+                )
             except ValueError as e:
-                st.error(f"❌ Failed to parse LLM output: {e}")
-            except Exception as e:
-                st.error(f"❌ Unexpected error: {e}")
+                st.error(f"The model returned something unparseable: {e}")

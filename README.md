@@ -4,7 +4,7 @@
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Model](https://img.shields.io/badge/model-gpt--4o--mini-green.svg)
 
-A Python tool that converts plain-text user stories into structured **Gherkin BDD scenarios** and **Pytest test skeletons** using AI via [OpenRouter](https://openrouter.ai). Pydantic models enforce structured output — if the model returns invalid JSON the generator raises a `ValueError` instead of silently producing broken tests. Ships with a Streamlit web UI for QA team self-service.
+A Python tool that converts plain-text user stories into structured **Gherkin BDD scenarios** and **Pytest test skeletons** using an LLM via [Groq](https://groq.com), falling back to [OpenRouter](https://openrouter.ai). Pydantic models enforce structured output — if the model returns invalid JSON the generator raises a `ValueError` instead of silently producing broken tests. Ships with a Streamlit web UI for QA team self-service.
 
 ---
 
@@ -13,7 +13,7 @@ A Python tool that converts plain-text user stories into structured **Gherkin BD
 ```
 User Story (plain text)
         ↓
-   OpenRouter AI (gpt-4o-mini)
+   Groq (openai/gpt-oss-120b)
         ↓  returns structured JSON
    Pydantic TestSuite validation
         ↓
@@ -77,7 +77,7 @@ Open http://localhost:8501, paste a user story, click **Generate**.
 
 ---
 
-## Get an OpenRouter API key
+## Get an API key
 
 1. Sign up free at [openrouter.ai](https://openrouter.ai)
 2. Go to **Keys** → **Create Key**
@@ -87,19 +87,28 @@ Open http://localhost:8501, paste a user story, click **Generate**.
    OPENROUTER_API_KEY=sk-or-v1-your-key-here
    ```
 
-The default model is **`openai/gpt-4o-mini`** — extremely cheap (~$0.00015 per 1K input tokens) and excellent at structured JSON output. You can override it programmatically:
+The default is **`openai/gpt-oss-120b`** on Groq, whose free tier allows 1000 requests a day and supports a real JSON mode. If `OPENROUTER_API_KEY` is also set it is tried when Groq fails. You can override the model:
 
 ```python
 suite = generate_test_suite(story, model="anthropic/claude-3-haiku")
 ```
 
-Other well-priced options on OpenRouter: `google/gemini-flash-1.5`, `anthropic/claude-3-haiku`, `mistralai/mistral-7b-instruct`.
+Free tiers rate limit without warning, which is why there is a fallback and why each provider is retried a few times.
 
 ---
 
-## Run tests (no API key needed)
+## Run tests
 
-All tests mock the OpenRouter client — the full suite runs in CI without a live API call.
+The suite splits in two.
+
+The **contract tests** patch the network. They pin the shaping logic and run anywhere with no key.
+
+The **integration tests** call a real model and are skipped when no key is set, so `pytest` works on a fresh clone. They assert on properties that must hold for any sensible output — step keywords are valid Gherkin, function names are snake_case — rather than exact text, because the output is not deterministic. All of them share one API call.
+
+```
+$ pytest -q                     # no key: 2 passed, 20 skipped
+$ GROQ_API_KEY=gsk_... pytest -q # with a key: 22 passed
+```
 
 ```bash
 pytest tests/ -v
@@ -116,7 +125,7 @@ For live integration tests in CI, add your key as a repository secret:
 3. Name: `OPENROUTER_API_KEY`, Value: your key
 4. Reference it in your workflow: `env: OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}`
 
-The existing CI workflow (`tests.yml`) runs only mocked tests and does **not** require this secret.
+CI sets this secret so the integration tests run. Without it they skip and the contract tests still pass, which is what happens on a fork.
 
 ---
 
@@ -137,17 +146,17 @@ Generated tests are starting points for QA review, not a replacement for human t
 ```
 ai-testcase-generator/
 ├── app/
-│   ├── generator.py        # Core: OpenRouter call, JSON parse, fence-stripping, serialisers
+│   ├── generator.py        # Provider fallback, retries, JSON parse, serialisers
 │   ├── models.py           # Pydantic models (TestSuite, GherkinScenario, …)
 │   ├── prompts.py          # Versioned system prompts (SYSTEM_PROMPT_V1)
 │   └── streamlit_app.py    # Streamlit web UI
 ├── tests/
-│   └── test_generator.py   # 11 unit tests — all mocked, no API key needed
+│   └── test_generator.py   # 22 tests: 2 contract (no key), 20 integration (skipped without one)
 ├── examples/
 │   ├── login_story.txt
 │   └── checkout_story.txt
 ├── .github/workflows/
-│   └── tests.yml           # CI: pytest on push/PR (mocked, no key needed)
+│   └── tests.yml           # CI: pytest on push/PR
 ├── .env.example            # Copy to .env and add your OPENROUTER_API_KEY
 ├── requirements.txt
 └── README.md

@@ -1,17 +1,20 @@
 """
-Integration tests for the AI test-case generator.
+Tests for the AI test-case generator.
 
-All positive-path tests call the real OpenRouter API (gpt-4o-mini).
-A module-scoped fixture makes exactly ONE API call and shares the result
-across every positive test — minimising cost and latency.
+Two kinds live here, and the split matters.
 
-The two error-handling tests at the bottom still patch the network layer
-because you cannot reliably force a remote LLM to return broken JSON on
-demand; those tests verify the generator's defensive parsing logic, not
-the LLM's behaviour.
+The contract tests patch the network. They pin the shaping logic — Gherkin
+rendering, pytest rendering, error handling — and run anywhere with no key.
+
+The integration tests call a real model, and are skipped when no key is set so
+that cloning the repo and running pytest still works. They assert on properties
+that must hold for any sensible output (step keywords are valid Gherkin, function
+names are snake_case) rather than on exact text, because the output is not
+deterministic. One module-scoped call is shared across all of them.
 """
 
 import json
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 from dotenv import load_dotenv
@@ -33,9 +36,18 @@ Acceptance criteria:
 """
 
 
+HAS_KEY = bool(os.environ.get("GROQ_API_KEY") or os.environ.get("OPENROUTER_API_KEY"))
+
+needs_key = pytest.mark.skipif(
+    not HAS_KEY, reason="no GROQ_API_KEY or OPENROUTER_API_KEY set"
+)
+
+
 @pytest.fixture(scope="module")
 def real_suite() -> TestSuite:
-    """Call OpenRouter once for the entire module. Cost: 1 API call."""
+    """One live call shared by every integration test in this module."""
+    if not HAS_KEY:
+        pytest.skip("no API key set")
     return generate_test_suite(LOGIN_STORY)
 
 
@@ -43,6 +55,7 @@ def real_suite() -> TestSuite:
 # Real API: structure validation
 # ---------------------------------------------------------------------------
 
+@needs_key
 class TestAPIOutput:
     def test_returns_test_suite_instance(self, real_suite):
         assert isinstance(real_suite, TestSuite)
@@ -94,6 +107,7 @@ class TestAPIOutput:
 # Real API: Gherkin serialiser
 # ---------------------------------------------------------------------------
 
+@needs_key
 class TestGherkinOutput:
     def test_starts_with_feature_keyword(self, real_suite):
         gherkin = suite_to_gherkin(real_suite)
@@ -124,6 +138,7 @@ class TestGherkinOutput:
 # Real API: Pytest serialiser
 # ---------------------------------------------------------------------------
 
+@needs_key
 class TestPytestOutput:
     def test_output_starts_with_import_pytest(self, real_suite):
         code = suite_to_pytest(real_suite)
@@ -149,14 +164,16 @@ class TestPytestOutput:
 # ---------------------------------------------------------------------------
 
 class TestErrorHandling:
+    """These patch the transport, so they run with no key and no network."""
+
     def test_invalid_json_raises_value_error(self):
         """Generator must raise ValueError when the LLM returns non-JSON."""
         bad = MagicMock()
         bad.choices = [MagicMock(message=MagicMock(content="not json at all {{"))]
-        with patch("app.generator.client") as mock_client:
-            mock_client.chat.completions.create.return_value = bad
-            with pytest.raises(ValueError, match="invalid JSON"):
-                generate_test_suite("test story")
+        with patch("app.generator._client") as build:
+            build.return_value.chat.completions.create.return_value = bad
+            with pytest.raises(RuntimeError, match="invalid JSON"):
+                generate_test_suite("test story", api_key="fake")
 
     def test_markdown_fenced_json_is_parsed(self):
         """Models sometimes wrap JSON in ```json...``` — the generator must strip it."""
@@ -174,8 +191,8 @@ class TestErrorHandling:
         fenced = f"```json\n{json.dumps(valid_data)}\n```"
         mock_resp = MagicMock()
         mock_resp.choices = [MagicMock(message=MagicMock(content=fenced))]
-        with patch("app.generator.client") as mock_client:
-            mock_client.chat.completions.create.return_value = mock_resp
-            result = generate_test_suite("test story")
+        with patch("app.generator._client") as build:
+            build.return_value.chat.completions.create.return_value = mock_resp
+            result = generate_test_suite("test story", api_key="fake")
         assert isinstance(result, TestSuite)
         assert result.feature == "Login"
