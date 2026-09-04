@@ -20,9 +20,9 @@
 <!-- The Cloudflare Worker that holds the Groq key as a secret, so the demo
      answers live without asking anyone for a key. It lives in the portfolio
      repository under worker/ and serves this page too, since a GitHub project
-     page shares its origin. Empty means not deployed, and this page falls back
-     to the saved answer in samples/. -->
-<body data-api="">
+     page shares its origin. Emptying this attribute falls back to the saved
+     answer in samples/. -->
+<body data-api="https://priya-ai-tools.priya123z.workers.dev">
 <a class="skip" href="#try">Skip to the demo</a>
 
 <header class="topbar">
