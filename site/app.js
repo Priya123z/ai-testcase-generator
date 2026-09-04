@@ -206,6 +206,7 @@ function stampText(meta, n, c) {
 }
 
 function whyCached(reason) {
+  if (reason === "too_fast") return "A saved answer. That was a lot of requests in a minute, so the shared key is pausing you.";
   if (reason === "visitor_daily") return "A saved answer. You have used today's dozen free runs on my key.";
   if (reason === "daily_budget") return "A saved answer. Today's shared budget is spent; it resets at midnight UTC.";
   if (reason === "provider_busy") return "A saved answer. Groq is rate limiting the shared key at the moment.";
