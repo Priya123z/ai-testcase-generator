@@ -1,7 +1,7 @@
 """The browser demo reimplements two serialisers in JavaScript.
 
 site/app.js has its own toGherkin and toPytest because the page has no Python to
-call — it talks to Groq directly from the visitor's browser. That is real
+call  it talks to Groq directly from the visitor's browser. That is real
 duplication, so this pins it: both implementations must produce byte-identical
 output for the same suite. Skipped when node is not installed, so a clean clone
 still passes.

@@ -2,7 +2,7 @@
 
    It talks to Groq straight from the browser using whatever key the visitor
    pastes in. Groq answers preflight with access-control-allow-origin: *, so no
-   server is involved — nothing is proxied, nothing is stored, and the key is
+   server is involved  nothing is proxied, nothing is stored, and the key is
    gone when the tab closes. With no key you get a saved answer from a real run,
    labelled as saved.
 
@@ -97,7 +97,7 @@ async function callGroq(story, key) {
     throw new Error("Groq rejected that key. Check it at console.groq.com/keys, or clear the field to see the saved answer.");
   }
   if (resp.status === 429) {
-    throw new Error("That key hit its rate limit. Wait a minute — the free tier allows 30 requests per minute.");
+    throw new Error("That key hit its rate limit. Wait a minute  the free tier allows 30 requests per minute.");
   }
   if (!resp.ok) throw new Error(data?.error?.message || `Groq answered ${resp.status}.`);
 
@@ -139,7 +139,7 @@ function render(suite, source) {
 
   $("stamp").className = "stamp " + (source === "live" ? "stamp-live" : "stamp-saved");
   $("stamp").textContent = source === "live"
-    ? `Live — ${n} scenarios and ${c} Pytest cases, generated just now by ${MODEL} on your key.`
+    ? `Live  ${n} scenarios and ${c} Pytest cases, generated just now by ${MODEL} on your key.`
     : `Saved answer from a real run, not generated just now. Add a free Groq key below and the same story runs live in your browser.`;
 
   $("feature").textContent = suite.feature;
@@ -224,8 +224,8 @@ document.querySelectorAll("[data-dl]").forEach(b =>
 
 $("key").addEventListener("input", () => {
   $("mode").textContent = $("key").value.trim()
-    ? "your key — answers live"
-    : "saved answer — add a key to run live";
+    ? "your key  answers live"
+    : "saved answer  add a key to run live";
 });
 
 $("year").textContent = new Date().getFullYear();

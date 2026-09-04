@@ -7,7 +7,7 @@ skeletons you can drop into a suite.
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Model](https://img.shields.io/badge/model-gpt--oss--120b%20on%20Groq-0a6e4e.svg)
 
-[**Try it in a browser**](https://priya123z.github.io/ai-testcase-generator/) — no install, no server, runs on your own free key.
+[**Try it in a browser**](https://priya123z.github.io/ai-testcase-generator/)  no install, no server, runs on your own free key.
 
 ---
 
@@ -47,7 +47,7 @@ Requirement (plain text)
 ```
 
 1. Paste a requirement with its acceptance criteria.
-2. The model writes 3–7 scenarios — happy path, negative paths, edge cases —
+2. The model writes 3–7 scenarios  happy path, negative paths, edge cases 
    and a matching Pytest function skeleton for each.
 3. `TestSuite` validates every field. A hallucinated structure is rejected
    before it reaches you, so you never get a `.feature` file that will not
@@ -125,7 +125,7 @@ streamlit run app/streamlit_app.py
 Open http://localhost:8501, paste a requirement, press **Generate**.
 
 `streamlit` is in `requirements-ui.txt` rather than `requirements.txt` on
-purpose — only `app/streamlit_app.py` imports it, and pulling a web framework in
+purpose  only `app/streamlit_app.py` imports it, and pulling a web framework in
 order to run a test suite that never touches one is a slow install for nothing.
 
 ## Getting a key
@@ -161,15 +161,15 @@ The suite splits in two, deliberately.
 and run anywhere with no key, so `pytest` works on a fresh clone.
 
 **Integration tests** call a real model. They skip when no key is set. They
-assert on properties that hold for *any* sensible answer — step keywords are
-valid Gherkin, function names are snake_case, scenario count is in range —
+assert on properties that hold for *any* sensible answer  step keywords are
+valid Gherkin, function names are snake_case, scenario count is in range 
 rather than on exact text, because the output is not deterministic. Asserting on
 exact strings against a live model gives you a suite that fails for no reason.
 All twenty share one API call.
 
 There is a third group: the browser demo reimplements the two serialisers in
 JavaScript, because that page has no Python to call. Real duplication, so it is
-pinned — `tests/test_browser_parity.py` runs both implementations over the same
+pinned  `tests/test_browser_parity.py` runs both implementations over the same
 suite and requires byte-identical output. It skips when `node` is absent, so a
 clean clone still passes.
 
@@ -199,8 +199,8 @@ split.
 ## Prompt versioning
 
 `app/prompts.py` holds versioned system prompts (`SYSTEM_PROMPT_V1`). Changing
-prompt strategy is a one-file change — nothing else in the codebase knows what
-the prompt says — so you can iterate on quality without touching modules.
+prompt strategy is a one-file change  nothing else in the codebase knows what
+the prompt says  so you can iterate on quality without touching modules.
 
 ---
 
@@ -250,4 +250,4 @@ ai-testcase-generator/
 they are where they are, the model hierarchy, what the tests actually assert, and
 twenty-five questions with answers.
 
-MIT. Built by Priya Bhagoriya — [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)
+MIT. Built by Priya Bhagoriya  [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)

@@ -76,7 +76,7 @@ def generate_test_suite(user_story: str, model: str = None, api_key: str = None)
             except Exception as exc:
                 errors.append(f"{provider} attempt {attempt + 1}: {_short(exc)}")
 
-    raise RuntimeError("Every provider failed — " + "; ".join(errors))
+    raise RuntimeError("Every provider failed  " + "; ".join(errors))
 
 
 def _short(exc: Exception, limit: int = 160) -> str:

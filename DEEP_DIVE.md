@@ -19,11 +19,11 @@ how it is put together and why each piece is the shape it is.
 
 ### Non-technical
 
-You write a sentence describing what a feature should do — *"a registered user
+You write a sentence describing what a feature should do  *"a registered user
 logs in with an email and a password, and the account locks after three failed
 attempts."* The tool sends that to a language model and gets back a list of test
 cases: the happy path, the wrong password, the empty field, the lockout. Those
-come back as two files a tester can use directly — one in Gherkin, the plain
+come back as two files a tester can use directly  one in Gherkin, the plain
 English format teams write acceptance tests in, and one as Python test stubs.
 
 The obvious cases take a person twenty minutes to write down. This does them in
@@ -43,7 +43,7 @@ them.
 | `app/models.py` | The Pydantic contract. Everything the model returns passes through here. |
 | `app/streamlit_app.py` | The local UI. Imports the library; holds no generation logic of its own. |
 | `site/` | The published browser demo. Calls Groq directly from the page; no server. |
-| `tests/test_generator.py` | 22 tests — 20 integration against a live model, 2 contract tests that patch the network. |
+| `tests/test_generator.py` | 22 tests  20 integration against a live model, 2 contract tests that patch the network. |
 | `tests/test_browser_parity.py` | 3 tests pinning the JavaScript serialisers to the Python ones. |
 
 The path a request takes:
@@ -51,7 +51,7 @@ The path a request takes:
 1. A story arrives as free text.
 2. `available_providers()` returns the providers that have a key, in order:
    Groq first, OpenRouter behind it. A key passed as an argument is treated as a
-   Groq key and used on its own — that is the path the UI uses when a visitor
+   Groq key and used on its own  that is the path the UI uses when a visitor
    brings their own.
 3. `_generate_with()` builds an `openai.OpenAI` client pointed at that provider's
    base URL. Both speak the OpenAI wire format, so one client class covers both.
@@ -66,8 +66,8 @@ fails, the error names each attempt rather than reporting a bare failure.
 ### The design decisions
 
 **The Pydantic step is the point of the project.** A model that returns
-*almost*-right JSON — a scenario with no steps, a keyword that is not a Gherkin
-keyword, a missing `coverage_notes` — produces a `.feature` file that fails to
+*almost*-right JSON  a scenario with no steps, a keyword that is not a Gherkin
+keyword, a missing `coverage_notes`  produces a `.feature` file that fails to
 parse in somebody's CI three days later, and the traceback names the parser
 rather than the generator. Validating at the boundary turns that into a
 `ValidationError` at the point of the mistake. The cost is one module of model
@@ -185,7 +185,7 @@ touching the library, and the models can be reused by anything.
 ### Prerequisites
 
 - Python 3.11 or newer
-- A free Groq API key — [console.groq.com/keys](https://console.groq.com/keys),
+- A free Groq API key  [console.groq.com/keys](https://console.groq.com/keys),
   about a minute, no card
 - Node, only if you want the two browser-parity tests to run rather than skip
 
@@ -225,7 +225,7 @@ streamlit run app/streamlit_app.py      # http://localhost:8501
 In a browser, with nothing installed:
 [priya123z.github.io/ai-testcase-generator](https://priya123z.github.io/ai-testcase-generator/).
 With no key it shows a saved answer from a real run, labelled as saved. Paste a
-key and the same story runs live, in the tab, against Groq — there is no server
+key and the same story runs live, in the tab, against Groq  there is no server
 in that path, so nothing is proxied and nothing is stored.
 
 ### What each dependency is for
@@ -297,7 +297,7 @@ to end.
 ### In CI
 
 `.github/workflows/tests.yml` passes both provider keys through as secrets. With
-them, all 25 run. Without them — a fork, for instance — the 20 integration tests
+them, all 25 run. Without them  a fork, for instance  the 20 integration tests
 skip and the build is still green. That is the split doing its job rather than a
 gap in coverage.
 
@@ -338,14 +338,14 @@ would otherwise be hand-written.
 **Q4. What is JSON mode, and does it make the parsing safe?**
 
 `response_format={"type": "json_object"}` constrains the model to emit
-syntactically valid JSON. It guarantees *syntax*, not *shape* — you can still
+syntactically valid JSON. It guarantees *syntax*, not *shape*  you can still
 get valid JSON with a missing field or a scenario with no steps. So JSON mode
 removes one failure class and Pydantic removes the other. Both are needed.
 
 **Q5. What happens when the model returns invalid JSON anyway?**
 
 `json.loads` raises, `_generate_with` turns it into a `ValueError("invalid
-JSON: ...")`, and `generate_test_suite` records that attempt and tries again —
+JSON: ...")`, and `generate_test_suite` records that attempt and tries again 
 up to three times per provider, then the next provider. If everything fails, the
 `RuntimeError` lists every attempt and its reason rather than saying the request
 failed. In the UI that becomes a message telling you free tiers rate limit and
@@ -362,19 +362,19 @@ error at all.
 
 Twenty tests, one call. `scope="module"` runs the fixture once, holds the
 `TestSuite`, and injects the same object into every test that asks for it.
-Function scope would mean twenty HTTP round trips at two to five seconds each —
+Function scope would mean twenty HTTP round trips at two to five seconds each 
 a minute and a half of runtime and twenty times the quota, to assert twenty
 different things about output that would not even be the same output. Sharing
 one answer is also more correct: the assertions are about a single response
 being internally consistent.
 
-**Q8. Unit test or integration test — which are these?**
+**Q8. Unit test or integration test  which are these?**
 
 Both, deliberately. The two error-path tests are unit tests: they patch
 `openai.OpenAI` and exercise the error handling with no network. The twenty
 assertion tests are integration tests against a real provider, which is the only
 way to catch a real API returning a different shape than a mock says it does.
-The parity tests are a third thing again — they run one implementation against
+The parity tests are a third thing again  they run one implementation against
 another and require identical output.
 
 **Q9. Why not mock everything?**
@@ -387,7 +387,7 @@ tells you the truth.
 
 **Q10. What is Gherkin, and why emit it?**
 
-Gherkin is the Given/When/Then format BDD tools read — `pytest-bdd`, `behave`,
+Gherkin is the Given/When/Then format BDD tools read  `pytest-bdd`, `behave`,
 Cucumber. It is the format a non-engineer on the team can read and correct,
 which matters more here than usual: the output needs reviewing, so it should be
 reviewable by whoever knows the product.
@@ -411,15 +411,15 @@ edit that erases the old behaviour.
 
 Streamlit gets a working form, tabs and download buttons out of about a hundred
 lines with no frontend. It is the right tool for a local app that one team uses.
-It is optional because the library does not need it and neither do the tests —
+It is optional because the library does not need it and neither do the tests 
 so it lives in `requirements-ui.txt`, and `pip install -r requirements.txt` stays
 fast.
 
 **Q14. There is a browser version too. Why does it duplicate the serialisers?**
 
 The published page calls Groq straight from the visitor's browser, with a key
-they paste in. That is the best possible privacy story — no server, nothing
-proxied, the key gone when the tab closes — and the cost is that there is no
+they paste in. That is the best possible privacy story  no server, nothing
+proxied, the key gone when the tab closes  and the cost is that there is no
 Python in that path. So `toGherkin` and `toPytest` are reimplemented in
 JavaScript. Rather than hope they stay in step, `tests/test_browser_parity.py`
 pulls both functions out of `site/app.js`, runs them under Node against the same
@@ -436,9 +436,9 @@ it left out, and that field is worth reading before the scenarios.
 
 **Q16. How do you handle hallucination?**
 
-By separating the two kinds. Structural hallucination — an invented field, a
-malformed step — is caught by Pydantic and cannot reach you. Semantic
-hallucination — a scenario that is well-formed and wrong — cannot be caught
+By separating the two kinds. Structural hallucination  an invented field, a
+malformed step  is caught by Pydantic and cannot reach you. Semantic
+hallucination  a scenario that is well-formed and wrong  cannot be caught
 automatically, and pretending otherwise would be the real failure. The honest
 answer is that this is why the output is a draft for review, and why
 `coverage_notes` is a required field rather than an optional one.
@@ -471,24 +471,24 @@ the other twenty on.
 
 Three attempts, then the next provider, then a `RuntimeError` naming every
 attempt. In the Streamlit UI that is caught and shown with the suggestion to
-paste your own key. On the published page there is no fallback provider at all —
-it is browser-to-Groq — so a failure there falls back to the saved answer, which
+paste your own key. On the published page there is no fallback provider at all 
+it is browser-to-Groq  so a failure there falls back to the saved answer, which
 is labelled as saved rather than passed off as live. A demo that shows an error
 teaches a visitor nothing; a demo that lies about being live is worse.
 
-**Q21. `scope="module"` versus `scope="function"` — what actually changes?**
+**Q21. `scope="module"` versus `scope="function"`  what actually changes?**
 
 Function scope creates the fixture fresh per test; module scope creates it once
 per module and shares it. Sharing is right when the object is expensive and the
 tests do not mutate it, which is exactly this case. It would be wrong if any
 test modified the suite, because the mutation would leak into the tests that ran
-after it — worth stating, because that is the failure mode module scope invites.
+after it  worth stating, because that is the failure mode module scope invites.
 
 **Q22. How would you check it generates good scenarios across different domains?**
 
 Property assertions do not measure quality, only well-formedness. To measure
-quality you would need a labelled set — a handful of stories with a
-human-written list of the cases that must appear — and score recall against it
+quality you would need a labelled set  a handful of stories with a
+human-written list of the cases that must appear  and score recall against it
 per prompt version. That is the experiment that would justify a `_V2`. It is not
 in the repo, and claiming the current suite measures quality would be wrong.
 
@@ -499,19 +499,19 @@ attempt, so it needs a sleep between attempts and a check for a 429 to
 distinguish "wait" from "this will never work". Right now it retries everything
 equally, which is fine at three attempts against a free tier and would not be
 fine at scale. Above that, a token bucket in front of the call, and the response
-cache the sibling project uses — two people pasting the same story is the common
+cache the sibling project uses  two people pasting the same story is the common
 case for anything linked from a portfolio, and a cache hit costs no quota at all.
 
 **Q24. What would you monitor if this ran in production?**
 
 Operationally: latency per provider, which provider served each request, attempt
-counts, and the rate of validation failures — that last one is the leading
+counts, and the rate of validation failures  that last one is the leading
 indicator of a model or prompt regression, because it rises before anyone
 notices the output got worse.
 
 On quality: scenarios per story against the requested three-to-seven, how often
 `coverage_notes` comes back empty, and, if you have the labelled set from Q22,
-recall against it per prompt version. Plus the only metric that really matters —
+recall against it per prompt version. Plus the only metric that really matters 
 how much of a generated suite survives review unedited.
 
 **Q25. What would you change if this became a real product?**
@@ -521,10 +521,10 @@ instead of remembered. Put the labelled evaluation set in and gate prompt change
 on it. Move the provider chain and the retry logic out of `generate_test_suite`
 into something reusable, since it is the same logic as the sibling project's and
 neither knows about the other. And take the browser demo's duplicated serialisers
-seriously — either generate the JavaScript from the Python, or accept the
+seriously  either generate the JavaScript from the Python, or accept the
 duplication permanently and keep the parity test, which is what happens today.
 
 ---
 
-MIT. Built by Priya Bhagoriya — [portfolio](https://priya123z.github.io/) ·
+MIT. Built by Priya Bhagoriya  [portfolio](https://priya123z.github.io/) ·
 [LinkedIn](https://linkedin.com/in/priya-bhagoriya)

@@ -3,8 +3,8 @@ Tests for the AI test-case generator.
 
 Two kinds live here, and the split matters.
 
-The contract tests patch the network. They pin the shaping logic — Gherkin
-rendering, pytest rendering, error handling — and run anywhere with no key.
+The contract tests patch the network. They pin the shaping logic  Gherkin
+rendering, pytest rendering, error handling  and run anywhere with no key.
 
 The integration tests call a real model, and are skipped when no key is set so
 that cloning the repo and running pytest still works. They assert on properties
@@ -159,7 +159,7 @@ class TestPytestOutput:
 
 
 # ---------------------------------------------------------------------------
-# Error-path tests — these MUST patch the network layer because you cannot
+# Error-path tests  these MUST patch the network layer because you cannot
 # reliably instruct a live LLM to return intentionally broken JSON.
 # ---------------------------------------------------------------------------
 
@@ -176,7 +176,7 @@ class TestErrorHandling:
                 generate_test_suite("test story", api_key="fake")
 
     def test_markdown_fenced_json_is_parsed(self):
-        """Models sometimes wrap JSON in ```json...``` — the generator must strip it."""
+        """Models sometimes wrap JSON in ```json...```  the generator must strip it."""
         valid_data = {
             "feature": "Login",
             "scenarios": [{"name": "Valid login redirects to dashboard", "tags": [], "steps": [

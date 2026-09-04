@@ -11,7 +11,7 @@ For every user story you receive, you must produce:
 RULES:
 - Generate 3–7 scenarios per story. Do not pad. Do not truncate real cases.
 - Scenario names must be specific, not generic ("Successful login with valid credentials" not "Test login").
-- Gherkin steps must be concrete — use real-looking data values in Given/When steps.
+- Gherkin steps must be concrete  use real-looking data values in Given/When steps.
 - Pytest function names must be snake_case starting with test_.
 - The coverage_notes field must honestly note what edge cases you are NOT generating (e.g. "Session management and MFA flows are out of scope for this story").
 - You MUST return valid JSON matching the schema below. No markdown fences, no prose before or after.
