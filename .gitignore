@@ -5,3 +5,8 @@ __pycache__/
 .pytest_cache/
 
 WALKTHROUGH.local.md
+
+# The long-form guide. Kept out of the repository on purpose: it is written
+# against a working tree at a moment in time, and a document that ships with the
+# code but is not updated with it is worse than one that is plainly local.
+DEEP_DIVE.md

@@ -258,14 +258,7 @@ ai-testcase-generator/
 |  '- pages.yml           publishes site/
 |- .env.example
 |- requirements.txt       library + tests
-|- requirements-ui.txt    adds streamlit
-'- DEEP_DIVE.md           architecture, design decisions, and the questions
-                          people ask about it
+'- requirements-ui.txt    adds streamlit
 ```
-
-[`DEEP_DIVE.md`](DEEP_DIVE.md) is the long version: every file and what it is
-for, how one call flows through the layers, why the validation sits where it
-does, what the tests actually assert and why they are split the way they are,
-the decisions worth defending and the ones worth arguing about, and an FAQ.
 
 MIT. Built by Priya Bhagoriya: [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)
