@@ -4,25 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
-<title>AI Test-Case Generator  requirement to Gherkin and Pytest</title>
-<meta name="description" content="Paste a requirement in plain English, get Gherkin scenarios and Pytest skeletons. Runs in your browser on a free Groq key  no install, no server. By Priya Bhagoriya.">
+<title>AI Test-Case Generator: requirement to Gherkin and Pytest</title>
+<meta name="description" content="Paste a requirement in plain English, get Gherkin scenarios and Pytest skeletons. Runs in your browser with no install, no signup and no key needed. By Priya Bhagoriya.">
 <link rel="canonical" href="https://priya123z.github.io/ai-testcase-generator/">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%230a6e4e%22/><path d=%22M9 16.5l4.6 4.6L23 11.7%22 stroke=%22white%22 stroke-width=%223.4%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/></svg>">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://priya123z.github.io/ai-testcase-generator/">
-<meta property="og:title" content="AI Test-Case Generator  requirement to Gherkin and Pytest">
+<meta property="og:title" content="AI Test-Case Generator: requirement to Gherkin and Pytest">
 <meta property="og:description" content="Paste a requirement, get Gherkin scenarios and Pytest skeletons. Runs in your browser on a free key.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css?v=1">
 </head>
-<body>
+<!-- The Cloudflare Worker that holds the Groq key as a secret, so the demo
+     answers live without asking anyone for a key. It lives in the portfolio
+     repository under worker/ and serves this page too, since a GitHub project
+     page shares its origin. Empty means not deployed, and this page falls back
+     to the saved answer in samples/. -->
+<body data-api="">
 <a class="skip" href="#try">Skip to the demo</a>
 
 <header class="topbar">
   <div class="wrap topbar-in">
-    <a class="wordmark" href="https://priya123z.github.io/">Priya Bhagoriya <span> SDET</span></a>
+    <a class="wordmark" href="https://priya123z.github.io/">Priya Bhagoriya <span>SDET</span></a>
     <nav class="topnav">
       <a href="#try">Try it</a>
       <a href="#how">How it works</a>
@@ -39,8 +44,10 @@
       <h1>A requirement in. Gherkin and Pytest out.</h1>
       <p class="lead">
         Paste an acceptance criterion and get scenarios you can drop into a suite,
-        with a matching Pytest skeleton for each. It runs in this tab on your own free
-        Groq key  no install, no server, and the key never leaves your machine.
+        with a matching Pytest skeleton for each. It runs in this tab, with nothing to
+        install and no key to go and get: the request goes to a small Cloudflare Worker
+        holding my Groq key, inside a daily budget. Bring your own key instead and your
+        browser talks to Groq directly, with nothing of mine in the path.
       </p>
     </div>
   </section>
@@ -48,7 +55,7 @@
   <section class="section" id="try">
     <div class="wrap">
       <div class="panel">
-        <label for="story">The requirement. Acceptance criteria help  the more concrete you are, the less it has to guess.</label>
+        <label for="story">The requirement. Acceptance criteria help: the more concrete you are, the less it has to guess.</label>
         <textarea id="story" rows="11" spellcheck="false">As a registered user, I want to log in with my email and password so that I can access my dashboard.
 
 Acceptance criteria:
@@ -59,7 +66,7 @@ Acceptance criteria:
 
         <div class="runrow">
           <button class="btn btn-solid" id="run">Generate test cases</button>
-          <p class="mode" id="mode">saved answer  add a key to run live</p>
+          <p class="mode" id="mode">saved answer, add a key to run live</p>
         </div>
 
         <p class="err" id="error" hidden></p>
@@ -94,14 +101,18 @@ Acceptance criteria:
           </div>
         </div>
 
-        <details class="keyrow" open>
-          <summary>Run it live with your own key</summary>
+        <details class="keyrow">
+          <summary>Optional: run it on your own key instead</summary>
+          <p>
+            You do not need one. This is here for when the shared budget is spent, or you want
+            to run this more than a dozen times in a day, or you would rather not send your
+            requirement through anything of mine.
+          </p>
           <p>
             Get a free key at
-            <a class="linkline" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a> 
+            <a class="linkline" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com/keys</a>:
             no card, about a minute. Paste it below and your browser calls Groq directly. There is
-            no server in that path, so nothing is proxied through me, nothing is stored, and the
-            key is gone when you close the tab.
+            no server in that path, nothing is stored, and the key is gone when you close the tab.
           </p>
           <input id="key" type="password" placeholder="gsk_..." autocomplete="off" spellcheck="false" aria-label="Your Groq API key">
         </details>
@@ -123,7 +134,7 @@ Acceptance criteria:
         <div class="how-card">
           <h3>Then it gets validated</h3>
           <p>
-            Every field is checked before you see it  step keywords must be real Gherkin,
+            Every field is checked before you see it: step keywords must be real Gherkin,
             test names must be snake_case. Almost-right JSON fails here rather than becoming
             a <code>.feature</code> file that will not parse.
           </p>
@@ -148,7 +159,7 @@ Acceptance criteria:
           This page is the browser version. The repository has the Python library behind it, a
           Streamlit app for running it inside a team, and a test suite split into contract tests
           that patch the network and integration tests that assert properties true of any valid
-          answer  because the output is never the same twice.
+          answer, because the output is never the same twice.
         </p>
         <div class="dlrow">
           <a class="btn btn-line" href="https://github.com/Priya123z/ai-testcase-generator">Read the code</a>
@@ -167,6 +178,6 @@ Acceptance criteria:
   </div>
 </footer>
 
-<script src="app.js?v=1"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

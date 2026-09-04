@@ -7,7 +7,7 @@ skeletons you can drop into a suite.
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Model](https://img.shields.io/badge/model-gpt--oss--120b%20on%20Groq-0a6e4e.svg)
 
-[**Try it in a browser**](https://priya123z.github.io/ai-testcase-generator/)  no install, no server, runs on your own free key.
+[**Try it in a browser**](https://priya123z.github.io/ai-testcase-generator/): no install, no signup, no key needed.
 
 ---
 
@@ -47,8 +47,9 @@ Requirement (plain text)
 ```
 
 1. Paste a requirement with its acceptance criteria.
-2. The model writes 3–7 scenarios  happy path, negative paths, edge cases 
-   and a matching Pytest function skeleton for each.
+2. The model writes between three and seven scenarios covering the happy path,
+   the negative paths and the edge cases, with a matching Pytest function
+   skeleton for each.
 3. `TestSuite` validates every field. A hallucinated structure is rejected
    before it reaches you, so you never get a `.feature` file that will not
    parse.
@@ -93,9 +94,16 @@ Feature: User Login
 
 **1. In your browser, nothing installed.**
 [priya123z.github.io/ai-testcase-generator](https://priya123z.github.io/ai-testcase-generator/)
-is a static page that calls Groq directly with a key you paste in. There is no
-server in that path, so nothing is proxied, nothing is stored, and the key is
-gone when the tab closes. With no key it shows a saved answer from a real run.
+is a static page, and you do not need a key to use it. The request goes to a
+small Cloudflare Worker holding my Groq key as a secret, inside a daily budget
+of 400 runs across everyone and 12 per visitor. That Worker lives in the
+[portfolio repository](https://github.com/Priya123z/Priya123z.github.io/tree/main/worker)
+and serves both pages, since this one is a project page on the same origin.
+
+Paste your own key instead and the browser calls Groq directly, with nothing of
+mine in the path and nothing stored. If the budget is spent or Groq is having a
+bad afternoon, you get a saved answer from a real earlier run, and the page says
+which of the three happened rather than passing one off as another.
 
 **2. As a library.**
 
@@ -125,7 +133,7 @@ streamlit run app/streamlit_app.py
 Open http://localhost:8501, paste a requirement, press **Generate**.
 
 `streamlit` is in `requirements-ui.txt` rather than `requirements.txt` on
-purpose  only `app/streamlit_app.py` imports it, and pulling a web framework in
+purpose. Only `app/streamlit_app.py` imports it, and pulling a web framework in
 order to run a test suite that never touches one is a slow install for nothing.
 
 ## Getting a key
@@ -160,27 +168,32 @@ The suite splits in two, deliberately.
 **Contract tests** patch the network. They pin the shaping and serialising logic
 and run anywhere with no key, so `pytest` works on a fresh clone.
 
-**Integration tests** call a real model. They skip when no key is set. They
-assert on properties that hold for *any* sensible answer  step keywords are
-valid Gherkin, function names are snake_case, scenario count is in range 
-rather than on exact text, because the output is not deterministic. Asserting on
-exact strings against a live model gives you a suite that fails for no reason.
-All twenty share one API call.
+**Integration tests** call a real model and skip when no key is set. They assert
+on properties that hold for *any* sensible answer: step keywords are valid
+Gherkin, function names are snake_case, the scenario count is in range. Not on
+exact text, because the output is not deterministic, and asserting on exact
+strings against a live model gives you a suite that fails for no reason. All
+twenty share one API call.
 
-There is a third group: the browser demo reimplements the two serialisers in
-JavaScript, because that page has no Python to call. Real duplication, so it is
-pinned  `tests/test_browser_parity.py` runs both implementations over the same
-suite and requires byte-identical output. It skips when `node` is absent, so a
-clean clone still passes.
+There is a third group. The browser demo carries its own copy of the system
+prompt and of the two serialisers, because that page has no Python to call.
+`tests/test_browser_parity.py` pins all three: it runs the JavaScript and Python
+serialisers over the same suite and requires byte-identical output, and it
+compares the two copies of the prompt character for character.
+
+That last check was not hypothetical. The two prompts had already drifted, and
+the JavaScript one had lost the clause telling the model to name what it chose
+*not* to cover, so the same requirement produced measurably different output
+depending on which path a visitor happened to take. Nothing caught it, because
+nothing was comparing them. Now something is.
 
 ```bash
-pytest                        # no key:   5 passed, 20 skipped
-GROQ_API_KEY=gsk_... pytest   # with key: 25 passed
+pytest                        # no key:   6 passed, 20 skipped
+GROQ_API_KEY=gsk_... pytest   # with key: 26 passed
 ```
 
-Last runs: **25 passed in 7.4s** with a key, **5 passed / 20 skipped** on a
-clean clone with none. CI on the last commit: **25 passed**, integration tests
-included.
+The serialiser comparisons need `node` and skip without it, so a clean clone
+still passes. The prompt comparison needs nothing and always runs.
 
 ### Making CI run the live tests
 
@@ -198,9 +211,13 @@ split.
 
 ## Prompt versioning
 
-`app/prompts.py` holds versioned system prompts (`SYSTEM_PROMPT_V1`). Changing
-prompt strategy is a one-file change  nothing else in the codebase knows what
-the prompt says  so you can iterate on quality without touching modules.
+`app/prompts.py` holds versioned system prompts (`SYSTEM_PROMPT_V1`). Nothing
+else in the Python codebase knows what the prompt says, so changing strategy is
+a one-file change and you can iterate on quality without touching modules.
+
+The one exception is `site/app.js`, which needs its own copy because the browser
+has no Python to import. Change the prompt and you have to change both, and
+`tests/test_browser_parity.py` fails until you do.
 
 ---
 
@@ -232,7 +249,7 @@ ai-testcase-generator/
 |  '- samples/login.json  a real answer, shown when there is no key
 |- tests/
 |  |- test_generator.py       22 tests: 2 contract, 20 integration
-|  '- test_browser_parity.py  3 tests: the JS and Python output must match
+|  '- test_browser_parity.py  4 tests: the JS and Python copies must match
 |- examples/
 |  |- login_story.txt
 |  '- checkout_story.txt
@@ -246,8 +263,9 @@ ai-testcase-generator/
                           people ask about it
 ```
 
-[`DEEP_DIVE.md`](DEEP_DIVE.md) is the long version: the layer boundaries and why
-they are where they are, the model hierarchy, what the tests actually assert, and
-twenty-five questions with answers.
+[`DEEP_DIVE.md`](DEEP_DIVE.md) is the long version: every file and what it is
+for, how one call flows through the layers, why the validation sits where it
+does, what the tests actually assert and why they are split the way they are,
+the decisions worth defending and the ones worth arguing about, and an FAQ.
 
-MIT. Built by Priya Bhagoriya  [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)
+MIT. Built by Priya Bhagoriya: [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)

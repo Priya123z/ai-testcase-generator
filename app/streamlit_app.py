@@ -35,7 +35,7 @@ with st.expander("ℹ️ How to use", expanded=False):
     st.markdown("""
 1. Paste a user story (one or more sentences describing a feature and its acceptance criteria).
 2. Click **Generate**.
-3. Review the output  Gherkin tab for BDD, Pytest tab for code, JSON tab for the raw structured data.
+3. Review the output: Gherkin tab for BDD, Pytest tab for code, JSON tab for the raw structured data.
 4. Download the files you need.
 
 **Note:** Generated tests are starting points for QA review, not a replacement for human test design.
@@ -48,7 +48,7 @@ with st.sidebar:
         "Groq API key",
         type="password",
         help="Optional. Leave blank to use the key this app is configured with. "
-             "Get a free one at console.groq.com/keys  it is only held for this run.",
+             "Get a free one at console.groq.com/keys. It is only held for this run.",
     ).strip()
 
     if user_key:

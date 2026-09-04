@@ -1,10 +1,18 @@
-"""The browser demo reimplements two serialisers in JavaScript.
+"""The browser demo reimplements parts of the Python side in JavaScript.
 
-site/app.js has its own toGherkin and toPytest because the page has no Python to
-call  it talks to Groq directly from the visitor's browser. That is real
-duplication, so this pins it: both implementations must produce byte-identical
-output for the same suite. Skipped when node is not installed, so a clean clone
-still passes.
+site/app.js carries its own copy of the system prompt and its own toGherkin and
+toPytest, because the page has no Python to call: it talks to Groq straight from
+the visitor's browser. That duplication is real and unavoidable, so this module
+pins it down.
+
+The prompt test earns its place. The two copies had already drifted: the
+JavaScript one was missing the clause telling the model to name what it chose
+not to cover, so the same requirement produced measurably different output
+depending on which path a visitor happened to take. Nothing caught it, because
+nothing was comparing them.
+
+The serialiser tests need node and are skipped without it, so a clean clone
+still passes. The prompt test needs nothing and always runs.
 """
 import json
 import shutil
@@ -31,7 +39,7 @@ def run_js(fn: str, payload: dict) -> str:
 
     script = (
         src[start:end]
-        + f"\nconst suite = JSON.parse(process.argv[1]);"
+        + "\nconst suite = JSON.parse(process.argv[1]);"
         + f"\nprocess.stdout.write({fn}(suite));"
     )
     out = subprocess.run(
@@ -39,6 +47,22 @@ def run_js(fn: str, payload: dict) -> str:
         capture_output=True, text=True, check=True,
     )
     return out.stdout
+
+
+def js_prompt() -> str:
+    """The system prompt as it is written in site/app.js."""
+    src = APP_JS.read_text()
+    return src.split("const SYSTEM_PROMPT = `", 1)[1].split("`;", 1)[0]
+
+
+def test_prompt_matches_python():
+    from app.prompts import SYSTEM_PROMPT_V1
+
+    assert js_prompt() == SYSTEM_PROMPT_V1, (
+        "site/app.js and app/prompts.py have drifted. Both paths must send the "
+        "identical system prompt, or the same requirement produces different "
+        "output depending on whether the visitor brought their own key."
+    )
 
 
 @pytest.fixture(scope="module")

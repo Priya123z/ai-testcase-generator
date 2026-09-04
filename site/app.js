@@ -1,17 +1,31 @@
 /* The demo on this page.
 
-   It talks to Groq straight from the browser using whatever key the visitor
-   pastes in. Groq answers preflight with access-control-allow-origin: *, so no
-   server is involved  nothing is proxied, nothing is stored, and the key is
-   gone when the tab closes. With no key you get a saved answer from a real run,
-   labelled as saved.
+   Three ways an answer can arrive, tried in this order, and the page always says
+   which one it used:
+
+     1. The visitor pasted their own Groq key, and the browser calls Groq
+        directly. Groq answers preflight with access-control-allow-origin: *, so
+        no server is involved, nothing is proxied, nothing is stored, and the key
+        is gone when the tab closes.
+     2. Nobody pasted anything, and the Worker is deployed. It holds a Groq key
+        as a Cloudflare secret and answers on it inside a daily budget, which is
+        what lets this page work without asking anyone to go and sign up first.
+        It lives in the portfolio repository under worker/ and serves that page
+        too; this one is a project page, so it is the same origin.
+     3. Neither. The saved answer in samples/, labelled as saved.
 
    SYSTEM_PROMPT and the two serialisers below mirror app/prompts.py and
-   app/generator.py. That is real duplication: this page has no Python to call.
-   If you change one, change the other. */
+   app/generator.py. That is real duplication, because this page has no Python to
+   call. tests/test_browser_parity.py fails if either copy drifts. */
 
 const MODEL = "openai/gpt-oss-120b";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const API_BASE = (document.body.dataset.api || "").replace(/\/+$/, "");
+
+/* Set by probe() shortly after load. Until it answers the page assumes there is
+   no backend, which is the safe way round: better to say "saved answer" and be
+   pleasantly wrong than to promise a live one and not have it. */
+let backend = false;
 
 const SYSTEM_PROMPT = `You are a senior QA engineer. Your job is to analyse a user story and generate comprehensive, well-structured test cases.
 
@@ -24,23 +38,33 @@ For every user story you receive, you must produce:
 3. A brief coverage note
 
 RULES:
-- Generate 3-7 scenarios per story. Do not pad. Do not truncate real cases.
+- Generate 3 to 7 scenarios per story. Do not pad. Do not truncate real cases.
 - Scenario names must be specific, not generic ("Successful login with valid credentials" not "Test login").
-- Gherkin steps must be concrete - use real-looking data values in Given/When steps.
+- Gherkin steps must be concrete: use real-looking data values in Given/When steps.
 - Pytest function names must be snake_case starting with test_.
-- The coverage_notes field must honestly note what edge cases you are NOT generating.
+- The coverage_notes field must honestly note what edge cases you are NOT generating (e.g. "Session management and MFA flows are out of scope for this story").
 - You MUST return valid JSON matching the schema below. No markdown fences, no prose before or after.
 
 JSON SCHEMA:
 {
   "feature": "string",
   "scenarios": [
-    {"name": "string", "tags": ["string"],
-     "steps": [{"keyword": "Given|When|Then|And", "text": "string"}]}
+    {
+      "name": "string",
+      "tags": ["string"],
+      "steps": [
+        { "keyword": "Given|When|Then|And", "text": "string" }
+      ]
+    }
   ],
   "pytest_cases": [
-    {"function_name": "string", "docstring": "string",
-     "steps": [{"description": "string", "code": "string"}]}
+    {
+      "function_name": "string",
+      "docstring": "string",
+      "steps": [
+        { "description": "string", "code": "string" }
+      ]
+    }
   ],
   "coverage_notes": "string"
 }`;
@@ -94,14 +118,48 @@ async function callGroq(story, key) {
   const data = await resp.json().catch(() => ({}));
 
   if (resp.status === 401) {
-    throw new Error("Groq rejected that key. Check it at console.groq.com/keys, or clear the field to see the saved answer.");
+    throw new Error("Groq rejected that key. Check it at console.groq.com/keys, or clear the field and this runs on the shared key instead.");
   }
   if (resp.status === 429) {
-    throw new Error("That key hit its rate limit. Wait a minute  the free tier allows 30 requests per minute.");
+    throw new Error("That key has hit its rate limit. The free tier allows 30 requests a minute, so give it about a minute.");
   }
   if (!resp.ok) throw new Error(data?.error?.message || `Groq answered ${resp.status}.`);
 
   return JSON.parse(data.choices[0].message.content);
+}
+
+async function callBackend(story) {
+  const resp = await fetch(`${API_BASE}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ story }),
+  });
+  if (!resp.ok) throw new Error(`the backend answered ${resp.status}`);
+
+  const data = await resp.json();
+  return { suite: data.result, meta: data.meta || {} };
+}
+
+async function savedAnswer() {
+  const resp = await fetch("samples/login.json");
+  if (!resp.ok) throw new Error("Could not load the saved answer. Try reloading the page.");
+  return { suite: await resp.json(), meta: { source: "saved" } };
+}
+
+/* One call at load so the line under the button is telling the truth before
+   anyone presses it. Never awaited by anything: if it does not come back, the
+   page stays on saved answers and stays usable. */
+async function probe() {
+  if (!API_BASE) return;
+  try {
+    const resp = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(4000) });
+    if (!resp.ok) return;
+    backend = Boolean((await resp.json()).shared_key);
+  } catch {
+    /* Worker asleep, offline, or never deployed. */
+  } finally {
+    showMode();
+  }
 }
 
 // The same validation the Python side does through Pydantic. A model that
@@ -132,15 +190,36 @@ function validate(s) {
   return s;
 }
 
-function render(suite, source) {
+/* The line above every answer saying where it came from. Nothing here is
+   decorative: a saved answer that is not marked as saved is a lie about what
+   this page can do. */
+function stampText(meta, n, c) {
+  if (meta.source === "live") {
+    const whose = meta.key === "byok" ? "your key" : "my key";
+    return `Live: ${n} scenarios and ${c} Pytest cases, generated just now by ${MODEL} on ${whose}.`;
+  }
+  if (meta.source === "cached") {
+    return `${whyCached(meta.reason)} Add your own key below and it runs live straight away.`;
+  }
+  return "A saved answer from a real earlier run, not generated just now. "
+    + "Add a free Groq key below and the same story runs live in your browser.";
+}
+
+function whyCached(reason) {
+  if (reason === "visitor_daily") return "A saved answer. You have used today's dozen free runs on my key.";
+  if (reason === "daily_budget") return "A saved answer. Today's shared budget is spent; it resets at midnight UTC.";
+  if (reason === "provider_busy") return "A saved answer. Groq is rate limiting the shared key at the moment.";
+  if (reason === "provider_error") return "A saved answer. The model call failed, so this is the last known good one.";
+  return "A saved answer from a real earlier run.";
+}
+
+function render(suite, meta) {
   current = suite;
   const n = suite.scenarios.length;
   const c = (suite.pytest_cases || []).length;
 
-  $("stamp").className = "stamp " + (source === "live" ? "stamp-live" : "stamp-saved");
-  $("stamp").textContent = source === "live"
-    ? `Live  ${n} scenarios and ${c} Pytest cases, generated just now by ${MODEL} on your key.`
-    : `Saved answer from a real run, not generated just now. Add a free Groq key below and the same story runs live in your browser.`;
+  $("stamp").className = "stamp " + (meta.source === "live" ? "stamp-live" : "stamp-saved");
+  $("stamp").textContent = stampText(meta, n, c);
 
   $("feature").textContent = suite.feature;
   $("countline").textContent = `${n} scenario${n === 1 ? "" : "s"} · ${c} Pytest case${c === 1 ? "" : "s"}`;
@@ -166,16 +245,22 @@ async function run() {
   }
 
   btn.disabled = true;
-  btn.textContent = key ? "Asking the model…" : "Loading…";
+  btn.textContent = "Asking the model…";
 
   try {
+    let answer;
+
     if (key) {
-      render(validate(await callGroq(story, key)), "live");
+      answer = { suite: await callGroq(story, key), meta: { source: "live", key: "byok" } };
+    } else if (backend) {
+      /* A backend that was up at load and is down now should still leave the
+         visitor with something to read. */
+      answer = await callBackend(story).catch(() => savedAnswer());
     } else {
-      const resp = await fetch("samples/login.json");
-      if (!resp.ok) throw new Error("Could not load the saved answer. Try reloading the page.");
-      render(validate(await resp.json()), "saved");
+      answer = await savedAnswer();
     }
+
+    render(validate(answer.suite), answer.meta);
   } catch (e) {
     err.textContent = e.message;
     err.hidden = false;
@@ -222,10 +307,15 @@ $("run").addEventListener("click", run);
 document.querySelectorAll("[data-dl]").forEach(b =>
   b.addEventListener("click", () => download(b.dataset.dl)));
 
-$("key").addEventListener("input", () => {
-  $("mode").textContent = $("key").value.trim()
-    ? "your key  answers live"
-    : "saved answer  add a key to run live";
-});
+function showMode() {
+  const el = $("mode");
+  if ($("key").value.trim()) el.textContent = "your key, answers live";
+  else if (backend) el.textContent = "shared key, answers live";
+  else el.textContent = "saved answer, add a key to run live";
+}
+
+$("key").addEventListener("input", showMode);
+showMode();
+probe();
 
 $("year").textContent = new Date().getFullYear();

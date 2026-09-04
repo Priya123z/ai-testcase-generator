@@ -1,530 +1,697 @@
-# Deep dive: ai-testcase-generator
+# A deep read of ai-testcase-generator
 
-Longer than the README on purpose. The README says what this is for; this says
-how it is put together and why each piece is the shape it is.
+The README says what this is for and how to run it. This is the long version:
+how it is put together, why each piece is the shape it is, what the tests
+actually assert, and the questions people ask when they review it.
+
+- [1. What it is](#1-what-it-is)
+- [2. Every file, and why it exists](#2-every-file-and-why-it-exists)
+- [3. One call, end to end](#3-one-call-end-to-end)
+- [4. The models, and why validation sits at the boundary](#4-the-models-and-why-validation-sits-at-the-boundary)
+- [5. The provider chain](#5-the-provider-chain)
+- [6. The serialisers](#6-the-serialisers)
+- [7. The prompt](#7-the-prompt)
+- [8. Three surfaces, one library](#8-three-surfaces-one-library)
+- [9. The browser demo, and its duplication](#9-the-browser-demo-and-its-duplication)
+- [10. Testing something that answers differently every time](#10-testing-something-that-answers-differently-every-time)
+- [11. CI](#11-ci)
+- [12. Running it yourself](#12-running-it-yourself)
+- [13. Decisions, and the ones worth arguing about](#13-decisions-and-the-ones-worth-arguing-about)
+- [14. What it does not do](#14-what-it-does-not-do)
+- [15. FAQ](#15-faq)
 
 ---
 
-## Contents
+## 1. What it is
 
-1. [What it is, at three levels](#1-what-it-is-at-three-levels)
-2. [Architecture](#2-architecture)
-3. [Running it](#3-running-it)
-4. [Checking it actually works](#4-checking-it-actually-works)
-5. [Questions people ask](#5-questions-people-ask)
+### If you do not write software
 
----
-
-## 1. What it is, at three levels
-
-### Non-technical
-
-You write a sentence describing what a feature should do  *"a registered user
+You write a sentence describing what a feature should do. *"A registered user
 logs in with an email and a password, and the account locks after three failed
-attempts."* The tool sends that to a language model and gets back a list of test
-cases: the happy path, the wrong password, the empty field, the lockout. Those
-come back as two files a tester can use directly  one in Gherkin, the plain
-English format teams write acceptance tests in, and one as Python test stubs.
+attempts."*
 
-The obvious cases take a person twenty minutes to write down. This does them in
-about five seconds, which leaves the twenty minutes for the cases that need
-somebody who knows the product.
+A tester's job is then to turn that sentence into a list of things to check. The
+obvious ones: does a correct password work, does a wrong one fail, what happens
+on the third wrong one, what if the box is empty. Writing that list down takes
+maybe twenty minutes, and most of it is mechanical.
 
-### How the pipeline works
+This tool sends the sentence to a language model and gets the list back in about
+five seconds, in two formats a tester can use straight away. That does not
+replace the twenty minutes. It moves them to the two or three cases that need
+somebody who actually understands the product, which is where the twenty minutes
+were always worth spending.
 
-A small Python library with a Streamlit UI on top and a static browser demo
-beside it. Three layers, and the boundaries matter more than the code inside
-them.
+### If you write software
 
-| File | Role |
-|---|---|
-| `app/prompts.py` | The system prompt, versioned. Nothing else in the codebase knows what the prompt says. |
-| `app/generator.py` | Provider selection, retries, fence stripping, JSON parse, and the two serialisers. |
-| `app/models.py` | The Pydantic contract. Everything the model returns passes through here. |
-| `app/streamlit_app.py` | The local UI. Imports the library; holds no generation logic of its own. |
-| `site/` | The published browser demo. Calls Groq directly from the page; no server. |
-| `tests/test_generator.py` | 22 tests  20 integration against a live model, 2 contract tests that patch the network. |
-| `tests/test_browser_parity.py` | 3 tests pinning the JavaScript serialisers to the Python ones. |
+A small Python library. One function in, one validated object out:
 
-The path a request takes:
+```python
+suite = generate_test_suite("As a user I want to log in...")
+print(suite_to_gherkin(suite))
+print(suite_to_pytest(suite))
+```
 
-1. A story arrives as free text.
-2. `available_providers()` returns the providers that have a key, in order:
-   Groq first, OpenRouter behind it. A key passed as an argument is treated as a
-   Groq key and used on its own  that is the path the UI uses when a visitor
-   brings their own.
-3. `_generate_with()` builds an `openai.OpenAI` client pointed at that provider's
-   base URL. Both speak the OpenAI wire format, so one client class covers both.
-   The request asks for `response_format={"type": "json_object"}`.
-4. The reply is stripped of markdown fences, parsed as JSON, and validated into
-   a `TestSuite`.
-5. `suite_to_gherkin` and `suite_to_pytest` turn that object into two text files.
+`generate_test_suite` calls a model with a fixed system prompt, asks for JSON,
+parses it, and validates the result against a Pydantic model before returning.
+`suite_to_gherkin` and `suite_to_pytest` turn that object into files.
 
-Each provider gets three attempts before the chain moves on. If every provider
-fails, the error names each attempt rather than reporting a bare failure.
+Three surfaces sit on top: import it as a library, run it as a Streamlit app, or
+use the static browser page, which needs nothing installed and no key.
 
-### The design decisions
+### If you are reviewing the design
 
-**The Pydantic step is the point of the project.** A model that returns
-*almost*-right JSON  a scenario with no steps, a keyword that is not a Gherkin
-keyword, a missing `coverage_notes`  produces a `.feature` file that fails to
-parse in somebody's CI three days later, and the traceback names the parser
-rather than the generator. Validating at the boundary turns that into a
-`ValidationError` at the point of the mistake. The cost is one module of model
-classes. It is worth it.
+The whole project is one idea worked through: **model output is untrusted input,
+and it should be validated at the boundary like any other untrusted input.**
 
-**Prompts live in one file and are versioned.** `SYSTEM_PROMPT_V1` and
-`SYSTEM_PROMPT_VERSION`. Changing review strategy is a one-file diff, and no
-module above it knows what the prompt says. It also means the browser demo can
-carry a copy without importing Python.
+Everything interesting follows from that. `TestSuite.model_validate` is the
+boundary, and it is the reason `generate_test_suite` can promise its caller a
+well-formed object rather than a dict that might have anything in it. The retry
+loop exists because a strict boundary means some answers get rejected, and one
+rejection should not become a user-visible failure. The provider fallback exists
+because free tiers rate limit without warning. The tests are split in two
+because you cannot assert on exact text from something that answers differently
+every time, but you can assert on properties that must hold for any valid
+answer.
 
-**Two providers, three attempts each.** Free tiers rate limit without warning.
-Groq is primary because its free tier allows 1000 requests a day against
-OpenRouter's 50, and it supports a real JSON mode rather than a request to
-please answer in JSON. The retry inside a provider is not paranoia: the schema
-asks the model to nest generated Python inside JSON strings, and a model
-occasionally emits a stray brace that strict JSON mode rejects. Sampling again
-usually produces valid output. That is a property of the model, not of the
-prompt, so retrying is the correct response rather than prompt-tweaking.
-
-**Streamlit is in a separate requirements file.** Only `app/streamlit_app.py`
-imports it. Pulling a web framework in to run a test suite that never touches
-one is a slow install for nothing, so `requirements.txt` is the library and the
-tests, and `requirements-ui.txt` adds Streamlit on top.
-
-**The browser demo duplicates two functions, deliberately.** `site/app.js`
-reimplements `suite_to_gherkin` and `suite_to_pytest` in JavaScript, because
-that page calls Groq straight from the browser and has no Python to call. Real
-duplication is a real risk, so `tests/test_browser_parity.py` extracts both
-functions out of `app.js`, runs them under Node over the same suite, and
-requires byte-identical output.
+The alternative shape (parse loosely, hope for the best, discover the problem
+when someone's `.feature` file will not parse three steps later) is easier to
+write and much worse to use.
 
 ---
 
-## 2. Architecture
+## 2. Every file, and why it exists
 
 ```
-                        A requirement, in plain English
-                                      |
-        +-----------------------------+-----------------------------+
-        |                             |                             |
-        v                             v                             v
-  streamlit_app.py              generate_test_suite()          site/app.js
-  (local UI)                    (library entry point)          (browser demo)
-        |                             |                             |
-        +--------------+--------------+                             |
-                       |                                            |
-                       v                                            |
-             available_providers()                                  |
-               Groq  ->  OpenRouter                                 |
-               3 attempts each                                      |
-                       |                                            |
-                       v                                            v
-              openai.OpenAI client                       fetch() straight to
-              response_format=json_object                api.groq.com
-                       |                                            |
-                       v                                            v
-                 _strip_fences()                             JSON.parse()
-                 json.loads()                                        |
-                       |                                            v
-                       v                                     validate() in JS
-             TestSuite.model_validate()                    (the same rules)
-                       |                                            |
-        +--------------+--------------+                             |
-        |                             |                             |
-        v                             v                             |
-  suite_to_gherkin()          suite_to_pytest()   <------------------+
-        |                             |            (toGherkin / toPytest,
-        v                             v             pinned byte-for-byte by
-   Feature file                 Pytest module       test_browser_parity.py)
+ai-testcase-generator/
+├── app/
+│   ├── generator.py         providers, retries, JSON parsing, serialisers
+│   ├── models.py            the Pydantic models: TestSuite and friends
+│   ├── prompts.py           versioned system prompts
+│   └── streamlit_app.py     the local web UI
+├── site/                    the browser demo, published to GitHub Pages
+│   ├── index.html
+│   ├── app.js               its own prompt copy and its own serialisers
+│   ├── style.css
+│   └── samples/login.json   a real answer, the no-backend fallback
+├── tests/
+│   ├── test_generator.py       22: 2 contract, 20 integration
+│   └── test_browser_parity.py  4: the JS and Python copies must agree
+├── examples/
+│   ├── login_story.txt
+│   └── checkout_story.txt
+├── .github/workflows/
+│   ├── tests.yml            pytest on push and pull request
+│   └── pages.yml            publishes site/
+├── requirements.txt         library and tests, no streamlit
+├── requirements-ui.txt      the above, plus streamlit
+└── .env.example
 ```
 
-### The model hierarchy
+### `app/models.py`
 
-```
-TestSuite
-  feature         : str
-  scenarios       : list[GherkinScenario]
-  |                   name  : str
-  |                   tags  : list[str]
-  |                   steps : list[GherkinStep]
-  |                             keyword : str   Given / When / Then / And
-  |                             text    : str
-  pytest_cases    : list[PytestTestCase]
-  |                   function_name : str
-  |                   docstring     : str
-  |                   steps         : list[PytestStep]
-  |                                     description : str
-  |                                     code        : str
-  coverage_notes  : str
+Five Pydantic models, forty lines, and the most important file in the
+repository. `GherkinStep` and `PytestStep` are the leaves; `GherkinScenario` and
+`PytestTestCase` hold lists of them; `TestSuite` holds both lists plus a feature
+name and the coverage notes.
+
+It also carries this, which is worth explaining:
+
+```python
+class TestSuite(BaseModel):
+    __test__ = False
 ```
 
-Nesting mirrors the shape of the thing being described rather than flattening it
-for convenience. A scenario owns its steps; a step is a keyword and a sentence.
-When the model returns a step as a bare string instead of an object, validation
-fails on that field and names it, which is the behaviour you want.
+Pytest collects anything named `Test*` that it finds in a test module's
+namespace. `TestSuite` is imported into the test modules, so pytest tried to
+collect it as a test class and printed a warning on every single run. Warnings
+that fire every run stop being read, and then a real one arrives and nobody sees
+it. `__test__ = False` is the flag pytest documents for exactly this.
 
-`TestSuite` carries `__test__ = False`. It is a model, not a test class, but
-pytest collects anything matching `Test*` that it finds in a test module's
-namespace and used to warn about it on every run.
+### `app/generator.py`
 
-### Where the layers stop
+The provider table, the retry loop, the JSON parsing, and the two serialisers.
+Around 130 lines and the only file that knows a model exists.
 
-- `models.py` imports only Pydantic. It knows nothing about providers or HTTP.
-- `prompts.py` imports nothing at all.
-- `generator.py` is the only module that makes a network call.
-- `streamlit_app.py` imports the library and adds no generation logic.
+### `app/prompts.py`
 
-So the library is usable without Streamlit, the prompts are editable without
-touching the library, and the models can be reused by anything.
+`SYSTEM_PROMPT_V1` and a version string. Nothing else in the Python codebase
+knows what the prompt says, so changing prompt strategy touches one file.
+
+### `app/streamlit_app.py`
+
+The local UI. The first ten lines are a `sys.path` fix with a comment saying
+why: `streamlit run app/streamlit_app.py` puts `app/` on the path but not the
+project root, so `from app.generator import ...` would fail in the one run mode
+the file exists to support.
+
+### `site/`
+
+The published demo. Covered in [section 9](#9-the-browser-demo-and-its-duplication),
+because its duplication is a real design decision rather than an accident.
 
 ---
 
-## 3. Running it
+## 3. One call, end to end
 
-### Prerequisites
+```
+   "As a registered user I want to log in..."
+                  |
+   available_providers(api_key)          which keys do we have?
+                  |
+   for provider in providers:            groq, then openrouter
+     for attempt in 1..3:                a rejection is not a failure yet
+                  |
+       _client(provider, key)            an OpenAI client, different base_url
+                  |
+       chat.completions.create(...)      response_format json_object
+                  |
+       _strip_fences(content)            some models fence it anyway
+                  |
+       json.loads(...)                   ValueError if it is not JSON
+                  |
+       TestSuite.model_validate(...)     ValidationError if the shape is wrong
+                  |
+              TestSuite                  <- the only thing a caller ever sees
+```
 
-- Python 3.11 or newer
-- A free Groq API key  [console.groq.com/keys](https://console.groq.com/keys),
-  about a minute, no card
-- Node, only if you want the two browser-parity tests to run rather than skip
+Every arrow after the model call can raise. If any of them does, the loop tries
+again, and if every provider has run out of attempts, a `RuntimeError` names
+each failure in order. The caller either gets a valid `TestSuite` or gets an
+exception that says what went wrong; it never gets a half-parsed dict.
 
-### Steps
+### Why three attempts
+
+```python
+ATTEMPTS_PER_PROVIDER = 3
+```
+
+The schema asks the model to put generated Python inside JSON strings. Nested
+quoting is the thing models are worst at, so occasionally one emits a stray
+brace and strict JSON mode rejects the whole response. Sampling again almost
+always produces valid output, because it is a sampling artifact rather than a
+misunderstanding of the prompt.
+
+This is worth being precise about, because "just retry it" is usually a code
+smell. Retrying is right here specifically because the failure is
+non-deterministic and independent between attempts. If the prompt were wrong,
+three attempts would fail three times and the error would say so.
+
+### Why fences get stripped
+
+```python
+def _strip_fences(text: str) -> str:
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+    return text.strip()
+```
+
+`response_format={"type": "json_object"}` is supposed to make this unnecessary.
+Sometimes it does not, particularly on the fallback provider. Six lines here
+prevent a whole class of failure that would otherwise look like "the model is
+broken", and one of the two contract tests pins it.
+
+---
+
+## 4. The models, and why validation sits at the boundary
+
+This is the argument the project is really making, so it is worth making it
+properly.
+
+Without validation, `generate_test_suite` returns a dict. The caller writes
+`suite["scenarios"][0]["steps"]` and it works, until the day the model returns
+`"scenario"` singular, or omits `steps` on one scenario out of six, or puts a
+string where a list belongs. Then you get a `KeyError` in the serialiser, or
+worse, a `.feature` file that is written successfully and fails to parse in
+somebody's CI tomorrow.
+
+With validation, `TestSuite.model_validate(data)` raises immediately, at the
+point where the bad data entered the system, with a message naming the field.
+
+```python
+return TestSuite.model_validate(data)
+```
+
+One line, and everything downstream can stop defending itself. `suite_to_gherkin`
+does not check whether `scenario.steps` exists, because it cannot not exist.
+
+The general form: **validate untrusted input at the boundary, once, and let the
+type system carry the guarantee from there.** A language model is untrusted
+input. It is friendlier and better-behaved than a hostile HTTP client, and it is
+in exactly the same category.
+
+Two smaller decisions inside the models:
+
+`tags: List[str] = Field(default_factory=list)` means a scenario with no tags is
+valid. Tags are genuinely optional in Gherkin and rejecting an untagged scenario
+would be stricter than the format.
+
+`coverage_notes: str = Field(...)` is required. A model that will not say what
+it left out has not really finished the job, and the field is the honest part of
+the output.
+
+---
+
+## 5. The provider chain
+
+```python
+PROVIDERS = {
+    "groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "env": "GROQ_API_KEY",
+        "model": "openai/gpt-oss-120b",
+    },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "env": "OPENROUTER_API_KEY",
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+    },
+}
+```
+
+Groq is first because its free tier allows 1,000 requests a day against
+OpenRouter's 50, and it supports a real JSON mode rather than requiring the JSON
+to be scraped out of prose.
+
+Both speak the OpenAI wire format, which is the only reason this table is as
+small as it is. One `OpenAI` client class covers both, and the difference
+between providers reduces to a base URL and a model slug.
+
+The OpenRouter slug ends in `:free` deliberately, and the comment in the file
+says why: a paid slug stops working the moment an account's balance reaches
+zero, which is a failure that arrives without warning on a project nobody is
+watching the billing for.
+
+`available_providers(api_key)` has one asymmetry worth knowing about:
+
+```python
+def available_providers(api_key: str = None):
+    """A supplied key is treated as a Groq key, which is what the UI passes through."""
+    if api_key:
+        return [("groq", api_key)]
+```
+
+A key passed in by a caller is assumed to be a Groq key, because the UIs that
+pass one are asking the visitor for a Groq key specifically. If you want to pass
+an OpenRouter key programmatically, set the environment variable rather than the
+argument.
+
+---
+
+## 6. The serialisers
+
+```python
+def suite_to_gherkin(suite: TestSuite) -> str:
+    lines = [f"Feature: {suite.feature}", ""]
+    for scenario in suite.scenarios:
+        if scenario.tags:
+            lines.append("  " + " ".join(f"@{t}" for t in scenario.tags))
+        lines.append(f"  Scenario: {scenario.name}")
+        for step in scenario.steps:
+            lines.append(f"    {step.keyword} {step.text}")
+        lines.append("")
+    return "\n".join(lines)
+```
+
+Pure functions, no I/O, no model. Given a `TestSuite` they always produce the
+same string, which is what makes them testable without a network and what makes
+the JavaScript parity check possible at all.
+
+They are also where the two output formats stay honest about their conventions:
+two spaces before `Scenario`, four before a step, a blank line between
+scenarios. Gherkin does not strictly require the indentation, but every tool
+that renders it assumes it, and output that does not look like what people
+expect gets distrusted.
+
+---
+
+## 7. The prompt
+
+`SYSTEM_PROMPT_V1` does four things, and each of them was added because its
+absence caused a specific problem.
+
+**It gives the JSON schema inline.** Even with `response_format` set, the model
+needs to be told what the fields are called.
+
+**It asks for between three and seven scenarios, and says not to pad.** Without
+a range you get either two scenarios or nineteen, and the nineteen are mostly
+restatements of each other.
+
+**It says scenario names must be specific.** The example in the prompt is
+`"Successful login with valid credentials"` rather than `"Test login"`. Models
+default to the generic version, and a list of generic names is much less useful
+than it looks.
+
+**It requires `coverage_notes` to name what was left out.** This is the clause
+that makes the output trustworthy, because a list of scenarios with no statement
+of scope reads as complete whether or not it is.
+
+That last clause is also the one that went missing from the JavaScript copy for
+a while. See the next section.
+
+---
+
+## 8. Three surfaces, one library
+
+Everything routes through `generate_test_suite`. The surfaces differ only in how
+they collect the story and what they do with the result.
+
+| Surface | Where | Needs installing | Needs a key |
+|---|---|---|---|
+| Library | `from app.generator import ...` | Python and four packages | Yes, in `.env` |
+| Streamlit app | `streamlit run app/streamlit_app.py` | The above plus streamlit | Yes, or paste one in |
+| Browser demo | [the published page](https://priya123z.github.io/ai-testcase-generator/) | Nothing | No |
+
+The browser demo is the only one that works with no key at all, and that is the
+point of it: someone reading a CV should be able to click a link and see the
+thing work, not read instructions about virtual environments.
+
+`streamlit` living in `requirements-ui.txt` rather than `requirements.txt` is a
+small decision with a clear rule behind it: **a dependency belongs in the file
+for the surface that imports it.** Only `app/streamlit_app.py` imports
+streamlit, so installing a web framework in order to run a test suite that never
+touches one is a slow install for nothing, and CI installs the lighter file.
+
+---
+
+## 9. The browser demo, and its duplication
+
+`site/app.js` carries its own copy of the system prompt and its own
+implementations of `toGherkin` and `toPytest`. That is real duplication and it
+is not an oversight: the page is static, served from GitHub Pages, with no
+Python anywhere in the path. There is nothing for it to import.
+
+The honest options were: accept the duplication and pin it with tests, or add a
+build step that generates the JavaScript from the Python. The second is a
+reasonable choice for a larger project. For three functions and a string, a
+build step is more machinery than the problem deserves, and it puts a
+transpilation between the source and the deployed artifact for a page whose main
+virtue is that you can read the whole thing.
+
+So the duplication is pinned instead, by `tests/test_browser_parity.py`:
+
+```python
+def test_prompt_matches_python():
+    from app.prompts import SYSTEM_PROMPT_V1
+    assert js_prompt() == SYSTEM_PROMPT_V1
+
+@needs_node
+def test_gherkin_matches_python(sample):
+    assert run_js("toGherkin", sample) == suite_to_gherkin(TestSuite(**sample))
+```
+
+`run_js` reads `site/app.js`, slices out the two functions by their comment
+markers, and runs them under `node -e` with no DOM. Which means the test runs
+the actual shipped code rather than a copy of it.
+
+**The prompt check is there because the drift already happened.** The two copies
+had diverged: the JavaScript one had lost the clause requiring `coverage_notes`
+to name what was left out, and had `3-7` where Python had a different dash. So
+the same requirement produced measurably different output depending on whether a
+visitor had pasted their own key. Nothing caught it, because nothing was
+comparing them. Now something is, and it fails on a single changed character.
+
+That is the general lesson worth taking from this file: **if you must duplicate,
+make the duplication testable and then test it.** Duplication that is written
+down and asserted on is a maintenance cost. Duplication that nothing checks is a
+bug waiting for a quiet afternoon.
+
+### How the demo answers
+
+Three ways, tried in order, and the page always says which one it used:
+
+1. **The visitor pasted a key.** The browser calls Groq directly. Groq allows
+   cross-origin requests, so nothing of mine is in that path.
+2. **Nobody pasted anything, and the Worker is up.** A Cloudflare Worker holds
+   my Groq key as a secret and answers on it, inside a daily budget of 400 runs
+   across everyone and 12 per visitor. It lives in the
+   [portfolio repository](https://github.com/Priya123z/Priya123z.github.io/tree/main/worker)
+   and serves that page too, since this one is a GitHub project page and
+   therefore the same origin.
+3. **Neither.** The saved answer in `site/samples/login.json`.
+
+The key cannot go in the page, because the page is public and a key in
+`app.js` is a key in devtools. That is the entire reason the Worker exists.
+
+The third path is the guarantee rather than the consolation prize: whatever is
+down, the demo cannot show a broken widget, and it cannot show a saved answer
+dressed up as a live one either. `test_saved_answer_is_a_valid_suite` validates
+that sample against the same Pydantic model, so the fallback cannot silently
+drift out of the shape the page expects.
+
+---
+
+## 10. Testing something that answers differently every time
+
+This is the part of the repository worth reading if you only read one.
+
+The problem: two runs on the same requirement produce different scenarios,
+different wording, different counts. Asserting on exact text gives you a suite
+that fails constantly for no reason, and a suite that fails for no reason gets
+muted, and a muted suite is worse than none.
+
+The answer is to split the tests by what they can actually know.
+
+### Contract tests: patch the network
+
+Two of them, and they exist because you cannot reliably instruct a live model to
+return deliberately broken output.
+
+```python
+def test_invalid_json_raises_value_error(self):
+    bad = MagicMock()
+    bad.choices = [MagicMock(message=MagicMock(content="not json at all {{"))]
+    with patch("app.generator._client") as build:
+        build.return_value.chat.completions.create.return_value = bad
+        with pytest.raises(RuntimeError, match="invalid JSON"):
+            generate_test_suite("test story", api_key="fake")
+```
+
+The patch is at `app.generator._client`, which is the transport boundary. That
+matters: patching lower would test the OpenAI SDK, and patching higher would
+test nothing. The other one feeds fenced JSON through and asserts it comes out
+as a valid `TestSuite`, pinning `_strip_fences`.
+
+These are the only mocks in the project, and they are here because the behaviour
+under test is *how the code reacts to bad input*, which is not a property of the
+model at all.
+
+### Integration tests: call a real model, assert on properties
+
+Twenty of them, sharing one API call through a module-scoped fixture, skipped
+when no key is set.
+
+```python
+@pytest.fixture(scope="module")
+def real_suite() -> TestSuite:
+    if not HAS_KEY:
+        pytest.skip("no API key set")
+    return generate_test_suite(LOGIN_STORY)
+```
+
+They assert things that must be true of *any* sensible answer:
+
+- every step keyword is one of Given, When, Then, And, But
+- every pytest function name matches `test_[a-z0-9_]+`
+- the scenario count is inside the range the prompt asked for
+- rendered Gherkin starts with `Feature:` and rendered Python with `import pytest`
+- every function name in the object appears in the rendered file
+
+None of those depend on what the model chose to write. All of them fail if the
+model starts returning something structurally wrong, which is the failure worth
+catching.
+
+### Why they skip rather than fail
+
+```bash
+pytest                        # no key:   6 passed, 20 skipped
+GROQ_API_KEY=gsk_... pytest   # with key: 26 passed
+```
+
+A clean clone with no key runs the contract tests and passes. That is deliberate
+and it is what keeps the build green on a fork, where a contributor has no
+access to secrets. `-rs` prints the skip reasons, so skipped is never confused
+with absent.
+
+---
+
+## 11. CI
+
+`.github/workflows/tests.yml` runs pytest on push and on pull request, passing
+both provider keys through from repository secrets:
+
+```yaml
+env:
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+  OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+```
+
+Neither is required. Without them the integration tests skip and the contract
+tests pass, which is exactly what happens on a fork and is the whole point of
+the split.
+
+The comment in the workflow says Groq's key specifically has to be present, not
+just one of the two, because Groq is tried first and the skip condition checks
+for either. It is the kind of thing that is obvious once and confusing a year
+later.
+
+`.github/workflows/pages.yml` publishes `site/` to GitHub Pages. Nothing is
+built; the directory is served as it stands.
+
+---
+
+## 12. Running it yourself
 
 ```bash
 git clone https://github.com/Priya123z/ai-testcase-generator.git
 cd ai-testcase-generator
 
-python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
-
-# The library and its tests
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Configure a key
-cp .env.example .env
-# then put your key in it:
-#   GROQ_API_KEY=gsk_your_key_here
+pytest                       # 6 passed, 20 skipped, no key needed
 ```
 
-As a library:
+For live output, get a free Groq key at
+[console.groq.com/keys](https://console.groq.com/keys) (no card, about a
+minute), then:
+
+```bash
+cp .env.example .env         # put the key in it
+python -c "
+from app.generator import generate_test_suite, suite_to_gherkin
+print(suite_to_gherkin(generate_test_suite(open('examples/login_story.txt').read())))
+"
+```
+
+For the UI:
+
+```bash
+pip install -r requirements-ui.txt
+streamlit run app/streamlit_app.py
+```
+
+Overriding the model per call:
 
 ```python
-from app.generator import generate_test_suite, suite_to_gherkin, suite_to_pytest
-
-suite = generate_test_suite(open("examples/login_story.txt").read())
-print(suite_to_gherkin(suite))
+suite = generate_test_suite(story, model="llama-3.3-70b-versatile")
 ```
-
-As a local app:
-
-```bash
-pip install -r requirements-ui.txt      # adds streamlit on top
-streamlit run app/streamlit_app.py      # http://localhost:8501
-```
-
-In a browser, with nothing installed:
-[priya123z.github.io/ai-testcase-generator](https://priya123z.github.io/ai-testcase-generator/).
-With no key it shows a saved answer from a real run, labelled as saved. Paste a
-key and the same story runs live, in the tab, against Groq  there is no server
-in that path, so nothing is proxied and nothing is stored.
-
-### What each dependency is for
-
-| Package | Why |
-|---|---|
-| `openai` | The client. Points at Groq or OpenRouter by base URL; both speak this wire format. |
-| `pydantic` | The validation boundary. The reason a bad answer fails here rather than downstream. |
-| `python-dotenv` | Reads `GROQ_API_KEY` out of `.env` so a key never has to be pasted into a shell. |
-| `pytest` | The suite. |
-| `streamlit` | `requirements-ui.txt` only. The local UI. |
-
----
-
-## 4. Checking it actually works
-
-### On a clean clone, with no key
-
-```bash
-pytest
-```
-
-Expect **5 passed, 20 skipped**. That is the whole point of the split: the
-contract tests and the parity tests need no network, so cloning the repo and
-running pytest works for someone who has never heard of Groq. The 20 skips name
-their reason (`no GROQ_API_KEY or OPENROUTER_API_KEY set`).
-
-If Node is missing, two of those five skip as well and you get 3 passed.
-
-### With a key
-
-```bash
-GROQ_API_KEY=gsk_... pytest
-```
-
-Expect **25 passed**, in roughly seven seconds. All twenty integration tests
-share a single API call through a module-scoped fixture.
-
-### What the integration tests assert
-
-Not exact text. The output is not deterministic, and a suite that pins exact
-strings against a live model fails for no reason and gets ignored within a week.
-They assert properties that must hold for any sensible answer:
-
-- between three and seven scenarios
-- every scenario has a name and at least one step
-- every step keyword is one of Given / When / Then / And / But
-- every pytest function name is snake_case and starts with `test_`
-- the feature name and every scenario name appear in the rendered Gherkin
-- the rendered pytest starts with `import pytest` and defines every function
 
 ### A sanity check by hand
 
-```python
->>> from app.generator import generate_test_suite, suite_to_gherkin
->>> suite = generate_test_suite("A user resets their password by email link. The link expires after 30 minutes.")
->>> len(suite.scenarios)
-5
->>> print(suite_to_gherkin(suite))
-Feature: Password reset by email
-  @happy_path
-  Scenario: Reset link sent to a registered address
-    Given ...
-```
+Run the same story twice and diff the two outputs. They will differ, and that is
+the point: it is why the integration tests assert on properties. If they come
+back identical, something is caching that you did not expect.
 
-If that returns a `TestSuite` and the Gherkin parses, the pipeline is intact end
-to end.
-
-### In CI
-
-`.github/workflows/tests.yml` passes both provider keys through as secrets. With
-them, all 25 run. Without them  a fork, for instance  the 20 integration tests
-skip and the build is still green. That is the split doing its job rather than a
-gap in coverage.
-
-`.github/workflows/pages.yml` publishes `site/` and, before it does, revalidates
-`site/samples/login.json` against the same rules the page enforces. The no-key
-path is what most visitors see; if that file ever drifted from what the page
-expects, the demo would render nothing and no test would have noticed.
+Then read `coverage_notes` on both. If it is vague or empty, the prompt is not
+doing its job and that is where to start iterating.
 
 ---
 
-## 5. Questions people ask
+## 13. Decisions, and the ones worth arguing about
 
-**Q1. What problem does this solve?**
+**Pydantic rather than a hand-rolled check.** The validation is declarative, the
+error messages name the field and the path, and the models double as
+documentation of the contract. A hand-rolled version would be forty lines of
+`if isinstance` that nobody keeps current.
 
-Test design starts with a blank page, and most of what goes on that page is
-obvious. Writing down the obvious cases is slow, and it consumes the attention
-that should go to the two cases that are not obvious. This writes the obvious
-ones so a person can spend their twenty minutes on the rest. It is a starting
-point for review, not a replacement for test design.
+**The OpenAI SDK rather than raw HTTP.** Both providers speak that wire format,
+so one client covers both and the provider table stays four lines each.
 
-**Q2. Why Groq, and why an OpenAI client pointed at it?**
+**Retries per provider, not per call.** Three attempts on Groq before falling
+back to OpenRouter, rather than alternating. Groq is faster and has the larger
+free tier, so exhausting it first is the right order.
 
-Groq exposes an OpenAI-compatible endpoint, so one client class covers both
-providers and switching is a base URL. Groq is first because its free tier
-allows 1000 requests a day against OpenRouter's 50, it supports a genuine JSON
-mode rather than a polite request, and it answers in well under a second.
-OpenRouter sits behind it because free tiers go quiet without warning, and one
-provider is not enough to keep a public demo working.
+**No caching.** Two runs on the same story are supposed to differ; caching would
+hide the non-determinism that the design is built around acknowledging.
 
-**Q3. Why Pydantic rather than checking the dict by hand?**
+**Worth arguing about:** `ATTEMPTS_PER_PROVIDER = 3` with no backoff between
+attempts. If the failure were a rate limit rather than a sampling artifact,
+three immediate retries make it worse. The counter-argument is that a rate limit
+raises a distinguishable error and the fallback provider handles it, but a
+short sleep between attempts would cost nothing and I would probably add it.
 
-Because the checks would be spread across the codebase and would drift. One
-model class states the contract once, in a form that is also the documentation,
-and raises at the boundary with the offending field named. It also gives
-`model_dump()` for the JSON tab and `model_validate()` for the parse, which
-would otherwise be hand-written.
-
-**Q4. What is JSON mode, and does it make the parsing safe?**
-
-`response_format={"type": "json_object"}` constrains the model to emit
-syntactically valid JSON. It guarantees *syntax*, not *shape*  you can still
-get valid JSON with a missing field or a scenario with no steps. So JSON mode
-removes one failure class and Pydantic removes the other. Both are needed.
-
-**Q5. What happens when the model returns invalid JSON anyway?**
-
-`json.loads` raises, `_generate_with` turns it into a `ValueError("invalid
-JSON: ...")`, and `generate_test_suite` records that attempt and tries again 
-up to three times per provider, then the next provider. If everything fails, the
-`RuntimeError` lists every attempt and its reason rather than saying the request
-failed. In the UI that becomes a message telling you free tiers rate limit and
-that your own key in the sidebar usually clears it.
-
-**Q6. What is `_strip_fences` for?**
-
-Some models wrap JSON in a markdown code fence despite being told not to, and
-JSON mode does not always prevent it. Three lines of regex here is cheaper than
-a retry, and it runs before `json.loads` so the common case never becomes an
-error at all.
-
-**Q7. Why is the live fixture module-scoped?**
-
-Twenty tests, one call. `scope="module"` runs the fixture once, holds the
-`TestSuite`, and injects the same object into every test that asks for it.
-Function scope would mean twenty HTTP round trips at two to five seconds each 
-a minute and a half of runtime and twenty times the quota, to assert twenty
-different things about output that would not even be the same output. Sharing
-one answer is also more correct: the assertions are about a single response
-being internally consistent.
-
-**Q8. Unit test or integration test  which are these?**
-
-Both, deliberately. The two error-path tests are unit tests: they patch
-`openai.OpenAI` and exercise the error handling with no network. The twenty
-assertion tests are integration tests against a real provider, which is the only
-way to catch a real API returning a different shape than a mock says it does.
-The parity tests are a third thing again  they run one implementation against
-another and require identical output.
-
-**Q9. Why not mock everything?**
-
-A mock asserts that the code matches your belief about the API. It cannot tell
-you the belief is wrong. Providers change model behaviour, deprecate slugs and
-alter how JSON mode behaves, and a fully mocked suite stays green through all of
-it. The split keeps the fast, always-runnable half separate from the half that
-tells you the truth.
-
-**Q10. What is Gherkin, and why emit it?**
-
-Gherkin is the Given/When/Then format BDD tools read  `pytest-bdd`, `behave`,
-Cucumber. It is the format a non-engineer on the team can read and correct,
-which matters more here than usual: the output needs reviewing, so it should be
-reviewable by whoever knows the product.
-
-**Q11. What is the pytest half for, if the Gherkin is the readable one?**
-
-The Gherkin describes the intent; the pytest module is where the work goes. Each
-case comes back as a function with a docstring and commented steps, so the
-skeleton says what each line is supposed to do and someone fills in the calls.
-It is a starting file rather than an empty one.
-
-**Q12. Why version the prompt?**
-
-Because prompt changes are the highest-variance change in a project like this,
-and the only way to reason about a regression is to know which prompt produced
-which output. `SYSTEM_PROMPT_V1` plus `SYSTEM_PROMPT_VERSION` means a stored
-result can be attributed, and a new strategy is `_V2` beside it rather than an
-edit that erases the old behaviour.
-
-**Q13. Why Streamlit, and why is it optional?**
-
-Streamlit gets a working form, tabs and download buttons out of about a hundred
-lines with no frontend. It is the right tool for a local app that one team uses.
-It is optional because the library does not need it and neither do the tests 
-so it lives in `requirements-ui.txt`, and `pip install -r requirements.txt` stays
-fast.
-
-**Q14. There is a browser version too. Why does it duplicate the serialisers?**
-
-The published page calls Groq straight from the visitor's browser, with a key
-they paste in. That is the best possible privacy story  no server, nothing
-proxied, the key gone when the tab closes  and the cost is that there is no
-Python in that path. So `toGherkin` and `toPytest` are reimplemented in
-JavaScript. Rather than hope they stay in step, `tests/test_browser_parity.py`
-pulls both functions out of `site/app.js`, runs them under Node against the same
-sample, and requires byte-identical output. The duplication is real, so it is
-pinned rather than denied.
-
-**Q15. What are the limitations of the generated cases?**
-
-It is good at the happy path and the obvious negative paths and it misses
-anything that depends on domain knowledge. It has never seen your billing rules,
-so it will write a confident, plausible, wrong scenario about proration. Two runs
-on the same story will differ. Every answer carries `coverage_notes` saying what
-it left out, and that field is worth reading before the scenarios.
-
-**Q16. How do you handle hallucination?**
-
-By separating the two kinds. Structural hallucination  an invented field, a
-malformed step  is caught by Pydantic and cannot reach you. Semantic
-hallucination  a scenario that is well-formed and wrong  cannot be caught
-automatically, and pretending otherwise would be the real failure. The honest
-answer is that this is why the output is a draft for review, and why
-`coverage_notes` is a required field rather than an optional one.
-
-**Q17. What is `coverage_notes` for?**
-
-It forces the model to say what it did *not* cover. That turns out to be the
-most useful field in the response: it is where you find out that session
-management, MFA and rate limiting were considered and left out. It is also a
-good teaching device for someone new to test design, because it makes the
-scoping decision explicit rather than invisible.
-
-**Q18. How would you add a new output format, say JUnit?**
-
-Add `suite_to_junit(suite)` next to the other two serialisers. Nothing else
-changes: the model layer, the prompt and the provider logic are all unaware of
-output formats, and the two existing serialisers are pure functions over a
-`TestSuite`. Then a tab in the Streamlit app and, if it should appear in the
-browser demo, a mirrored JavaScript function and a third parity test.
-
-**Q19. How does CI stay green without an API key?**
-
-Because the suite is split and the split is enforced by a skip marker, not by
-convention. `HAS_KEY` is computed once at import; `needs_key` skips the
-integration tests with a stated reason. A fork gets 5 passed, 20 skipped, and a
-green build. Adding `GROQ_API_KEY` as a repository secret is all it takes to turn
-the other twenty on.
-
-**Q20. What happens if a provider is down?**
-
-Three attempts, then the next provider, then a `RuntimeError` naming every
-attempt. In the Streamlit UI that is caught and shown with the suggestion to
-paste your own key. On the published page there is no fallback provider at all 
-it is browser-to-Groq  so a failure there falls back to the saved answer, which
-is labelled as saved rather than passed off as live. A demo that shows an error
-teaches a visitor nothing; a demo that lies about being live is worse.
-
-**Q21. `scope="module"` versus `scope="function"`  what actually changes?**
-
-Function scope creates the fixture fresh per test; module scope creates it once
-per module and shares it. Sharing is right when the object is expensive and the
-tests do not mutate it, which is exactly this case. It would be wrong if any
-test modified the suite, because the mutation would leak into the tests that ran
-after it  worth stating, because that is the failure mode module scope invites.
-
-**Q22. How would you check it generates good scenarios across different domains?**
-
-Property assertions do not measure quality, only well-formedness. To measure
-quality you would need a labelled set  a handful of stories with a
-human-written list of the cases that must appear  and score recall against it
-per prompt version. That is the experiment that would justify a `_V2`. It is not
-in the repo, and claiming the current suite measures quality would be wrong.
-
-**Q23. How would you add rate limiting or backoff?**
-
-The retry loop in `generate_test_suite` is the place: it already catches per
-attempt, so it needs a sleep between attempts and a check for a 429 to
-distinguish "wait" from "this will never work". Right now it retries everything
-equally, which is fine at three attempts against a free tier and would not be
-fine at scale. Above that, a token bucket in front of the call, and the response
-cache the sibling project uses  two people pasting the same story is the common
-case for anything linked from a portfolio, and a cache hit costs no quota at all.
-
-**Q24. What would you monitor if this ran in production?**
-
-Operationally: latency per provider, which provider served each request, attempt
-counts, and the rate of validation failures  that last one is the leading
-indicator of a model or prompt regression, because it rises before anyone
-notices the output got worse.
-
-On quality: scenarios per story against the requested three-to-seven, how often
-`coverage_notes` comes back empty, and, if you have the labelled set from Q22,
-recall against it per prompt version. Plus the only metric that really matters 
-how much of a generated suite survives review unedited.
-
-**Q25. What would you change if this became a real product?**
-
-Persist the results, so a prompt change can be compared against previous output
-instead of remembered. Put the labelled evaluation set in and gate prompt changes
-on it. Move the provider chain and the retry logic out of `generate_test_suite`
-into something reusable, since it is the same logic as the sibling project's and
-neither knows about the other. And take the browser demo's duplicated serialisers
-seriously  either generate the JavaScript from the Python, or accept the
-duplication permanently and keep the parity test, which is what happens today.
+**Also worth arguing about:** the fenced-JSON stripping papers over a provider
+not honouring `response_format`. Some would say let it fail loudly and pick a
+provider that behaves. I would rather the six lines than the support burden.
 
 ---
 
-MIT. Built by Priya Bhagoriya  [portfolio](https://priya123z.github.io/) ·
-[LinkedIn](https://linkedin.com/in/priya-bhagoriya)
+## 14. What it does not do
+
+**It does not know your domain.** It has never seen your billing rules. Given a
+story about proration it will write a confident, plausible, wrong scenario. This
+is the single most important limitation and the reason `coverage_notes` is a
+required field.
+
+**It does not produce runnable tests.** The pytest output is skeletons: function
+names, docstrings, and commented steps. Filling in the bodies is the work, and
+the tool is explicitly a starting point for it.
+
+**There is no prompt evaluation harness.** `SYSTEM_PROMPT_V1` is versioned, but
+nothing measures whether V2 is better than V1. A proper setup would run a set of
+stories through both and score the results, and that is the most interesting
+thing this project is missing.
+
+**No streaming.** The Streamlit app blocks for the several seconds a generation
+takes. Streaming would make it feel faster and is not implemented.
+
+**No cost accounting.** Free tiers only. Point it at a paid model and nothing
+tracks what you are spending.
+
+---
+
+## 15. FAQ
+
+**Why validate the model's output at all? It is JSON mode.**
+JSON mode guarantees you get JSON. It does not guarantee the JSON has your
+fields, in your types, with your required keys present. Those are different
+promises, and only the second one lets a serialiser stop defending itself.
+
+**Why not just retry forever until it parses?**
+Because a prompt that is genuinely wrong would then hang instead of failing.
+Three attempts is enough for a sampling artifact and short enough that a real
+problem surfaces as an error naming every attempt.
+
+**Why two providers?**
+Free tiers rate limit without warning and usually at the least convenient
+moment. The second is not for redundancy in the datacentre sense; it is so a
+demo linked from a CV does not go dark because someone else was busy.
+
+**Why is the browser demo not just an iframe of the Streamlit app?**
+Streamlit needs a server, and free hosting for one either sleeps after fifteen
+minutes or costs money. A static page has neither problem, and the Worker gives
+it live answers for the cost of a Cloudflare account.
+
+**Is duplicating the prompt in JavaScript not just bad?**
+It is a cost. The alternatives are a build step or a server, and for three
+functions and a string both are more machinery than the problem deserves. What
+makes it acceptable is that a test fails the moment the copies diverge, which is
+more than most duplication gets.
+
+**Why do the integration tests share one API call?**
+Twenty calls for twenty assertions about the same answer would be twenty times
+slower, twenty times the quota, and would test the model's consistency rather
+than the code. The module-scoped fixture makes them twenty assertions about one
+answer, which is what they are actually for.
+
+**Why does `pytest` pass on a clone with no key?**
+So it does. The contract tests cover the logic that does not need a model, and a
+build that goes red on a fork because a secret is missing teaches contributors
+to ignore red builds.
+
+**Can I use a different model?**
+`generate_test_suite(story, model="...")` overrides the slug for one call. Any
+model with a working JSON mode should work; ones without will lean on
+`_strip_fences` and fail more often.
+
+**What happens if the model returns valid JSON with nonsense content?**
+It comes back. Validation checks structure, not truth: a scenario named
+"Scenario 1" with steps that make no sense is structurally perfect. That is what
+human review is for, and it is why the README is explicit that this is a
+starting point rather than a replacement.
+
+**Why is `__test__ = False` on `TestSuite`?**
+Because pytest collects anything named `Test*` in a test module's namespace and
+warned about it on every run. Warnings that fire every run stop being read, and
+then a real one arrives and nobody sees it.

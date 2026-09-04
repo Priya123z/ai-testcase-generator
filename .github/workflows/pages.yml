@@ -2,7 +2,7 @@ name: deploy pages
 
 # Publishes the browser demo. It calls Groq directly from the page using whatever
 # key the visitor pastes in, so there is nothing to host and no secret needed
-# here  with no key the page shows a saved answer from a real run.
+# here. With no key the page falls back to the saved answer in samples/.
 
 on:
   push:
