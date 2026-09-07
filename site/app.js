@@ -162,8 +162,8 @@ async function probe() {
   }
 }
 
-// The same validation the Python side does through Pydantic. A model that
-// returns almost-right JSON should fail here, not three files later.
+// The same checks check_suite() runs in app/generator.py. A model that returns
+// almost-right JSON should fail here, not three files later.
 function validate(s) {
   if (!s || typeof s.feature !== "string" || !s.feature.trim()) {
     throw new Error("The model did not return a feature name.");
