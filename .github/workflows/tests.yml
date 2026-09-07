@@ -19,6 +19,13 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      # tests/test_browser_parity.py runs the JavaScript serialisers in site/app.js
+      # and requires byte-identical output from the Python ones. It skips without
+      # node, so half the parity guarantee was never actually enforced in CI.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
