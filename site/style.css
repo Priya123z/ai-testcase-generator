@@ -47,7 +47,6 @@ p:last-child { margin-bottom: 0; }
 .topbar { background: var(--paper); border-bottom: 1px solid var(--rule); }
 .topbar-in { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; min-height: 72px; }
 .wordmark { font-size: 17px; font-weight: 650; }
-.wordmark span { color: var(--ink-dim); font-weight: 400; }
 .topnav { display: flex; flex-wrap: wrap; gap: 26px; align-items: center; }
 .topnav a { font-size: 16.5px; color: var(--ink-mid); font-weight: 500; }
 .topnav a:hover { color: var(--pass); }

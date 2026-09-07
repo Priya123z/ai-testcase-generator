@@ -1,8 +1,4 @@
-# The library, the CLI path and the tests. Deliberately does not include
-# streamlit: only app/streamlit_app.py imports it, and pulling a web framework
-# to run a test suite that never touches one is a slow install for nothing.
-# For the UI: pip install -r requirements-ui.txt
+# The library and its tests.
 openai>=1.30.0
-pydantic>=2.7.4
 python-dotenv>=1.0.1
 pytest>=8.2.2

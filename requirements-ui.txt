@@ -1,3 +1,0 @@
-# The Streamlit app on top of the library.
--r requirements.txt
-streamlit>=1.35.0
