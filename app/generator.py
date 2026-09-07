@@ -5,7 +5,6 @@ import re
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from .models import TestSuite
 from .prompts import SYSTEM_PROMPT_V1
 
 load_dotenv()
@@ -30,7 +29,7 @@ PROVIDERS = {
 }
 
 
-def available_providers(api_key: str = None):
+def available_providers(api_key=None):
     """A supplied key is treated as a Groq key, which is what the UI passes through."""
     if api_key:
         return [("groq", api_key)]
@@ -38,11 +37,11 @@ def available_providers(api_key: str = None):
             if os.environ.get(cfg["env"])]
 
 
-def _client(provider: str, api_key: str) -> OpenAI:
+def _client(provider, api_key):
     return OpenAI(api_key=api_key, base_url=PROVIDERS[provider]["base_url"])
 
 
-def _strip_fences(text: str) -> str:
+def _strip_fences(text):
     """Strip markdown code fences that some models wrap around JSON."""
     text = text.strip()
     if text.startswith("```"):
@@ -51,8 +50,55 @@ def _strip_fences(text: str) -> str:
     return text.strip()
 
 
-def generate_test_suite(user_story: str, model: str = None, api_key: str = None) -> TestSuite:
-    """Convert a user story into a structured TestSuite.
+GHERKIN_KEYWORDS = ("Given", "When", "Then", "And", "But")
+
+
+def check_suite(data):
+    """Reject almost-right model output at the boundary.
+
+    A suite that is missing a field, or carries a step keyword that is not
+    Gherkin, or a test name pytest will never collect, produces files that fail
+    confusingly much later. The browser demo runs the same checks in JavaScript
+    (site/app.js), so both paths accept exactly the same answers.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("the model did not return an object")
+    if not str(data.get("feature", "")).strip():
+        raise ValueError("no feature name")
+    if not str(data.get("coverage_notes", "")).strip():
+        raise ValueError("no coverage_notes")
+
+    scenarios = data.get("scenarios")
+    if not isinstance(scenarios, list) or not scenarios:
+        raise ValueError("no scenarios")
+    for sc in scenarios:
+        if not str(sc.get("name", "")).strip():
+            raise ValueError("a scenario has no name")
+        steps = sc.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise ValueError(f"scenario {sc['name']!r} has no steps")
+        for st in steps:
+            if st.get("keyword") not in GHERKIN_KEYWORDS:
+                raise ValueError(f"{st.get('keyword')!r} is not a Gherkin keyword")
+            if not str(st.get("text", "")).strip():
+                raise ValueError(f"a step in {sc['name']!r} has no text")
+        sc.setdefault("tags", [])
+
+    cases = data.get("pytest_cases")
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("no pytest_cases")
+    for tc in cases:
+        name = tc.get("function_name", "")
+        if not re.fullmatch(r"test_[a-z0-9_]*", name or ""):
+            raise ValueError(f"{name!r} is not a snake_case test name")
+        if not isinstance(tc.get("steps"), list) or not tc["steps"]:
+            raise ValueError(f"{name} has no steps")
+
+    return data
+
+
+def generate_test_suite(user_story, model=None, api_key=None):
+    """Convert a user story into a checked suite dict.
 
     Tries each configured provider in turn, because the free tiers rate limit
     without warning and one provider is not enough to stay usable.
@@ -79,14 +125,17 @@ def generate_test_suite(user_story: str, model: str = None, api_key: str = None)
     raise RuntimeError("Every provider failed. " + "; ".join(errors))
 
 
-def _short(exc: Exception, limit: int = 160) -> str:
+def _short(exc, limit=160):
     text = str(exc).replace("\n", " ")
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
-def _generate_with(provider: str, key: str, user_story: str, model: str = None) -> TestSuite:
+def _generate_with(provider, key, user_story, model=None):
     response = _client(provider, key).chat.completions.create(
         model=model or PROVIDERS[provider]["model"],
+        # Matches site/app.js, so the same story gives the same kind of answer
+        # whichever path a caller takes.
+        temperature=0.2,
         max_tokens=8000,
         response_format={"type": "json_object"},
         messages=[
@@ -107,28 +156,28 @@ def _generate_with(provider: str, key: str, user_story: str, model: str = None) 
     except json.JSONDecodeError as e:
         raise ValueError(f"invalid JSON: {e}") from e
 
-    return TestSuite.model_validate(data)
+    return check_suite(data)
 
 
-def suite_to_gherkin(suite: TestSuite) -> str:
-    lines = [f"Feature: {suite.feature}", ""]
-    for scenario in suite.scenarios:
-        if scenario.tags:
-            lines.append("  " + " ".join(f"@{t}" for t in scenario.tags))
-        lines.append(f"  Scenario: {scenario.name}")
-        for step in scenario.steps:
-            lines.append(f"    {step.keyword} {step.text}")
+def suite_to_gherkin(suite):
+    lines = [f"Feature: {suite['feature']}", ""]
+    for scenario in suite["scenarios"]:
+        if scenario.get("tags"):
+            lines.append("  " + " ".join(f"@{t}" for t in scenario["tags"]))
+        lines.append(f"  Scenario: {scenario['name']}")
+        for step in scenario["steps"]:
+            lines.append(f"    {step['keyword']} {step['text']}")
         lines.append("")
     return "\n".join(lines)
 
 
-def suite_to_pytest(suite: TestSuite) -> str:
+def suite_to_pytest(suite):
     lines = ["import pytest", "", ""]
-    for tc in suite.pytest_cases:
-        lines.append(f"def {tc.function_name}():")
-        lines.append(f'    """{tc.docstring}"""')
-        for step in tc.steps:
-            lines.append(f"    # {step.description}")
-            lines.append(f"    {step.code}")
+    for tc in suite["pytest_cases"]:
+        lines.append(f"def {tc['function_name']}():")
+        lines.append(f'    """{tc["docstring"]}"""')
+        for step in tc["steps"]:
+            lines.append(f"    # {step['description']}")
+            lines.append(f"    {step['code']}")
         lines.append("")
     return "\n".join(lines)

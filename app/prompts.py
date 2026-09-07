@@ -39,5 +39,3 @@ JSON SCHEMA:
   ],
   "coverage_notes": "string"
 }"""
-
-SYSTEM_PROMPT_VERSION = "v1"

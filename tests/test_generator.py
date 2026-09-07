@@ -15,25 +15,19 @@ deterministic. One module-scoped call is shared across all of them.
 
 import json
 import os
-import pytest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+import pytest
 from dotenv import load_dotenv
 
 from app.generator import generate_test_suite, suite_to_gherkin, suite_to_pytest
-from app.models import TestSuite
 
 load_dotenv()
 
-LOGIN_STORY = """As a registered user, I want to log in with my email and password
-so that I can access my dashboard.
-
-Acceptance criteria:
-- Valid credentials redirect to /dashboard
-- Invalid password shows "Credentials do not match" error message
-- Empty email field shows inline "Email is required" validation error
-- Empty password field shows inline "Password is required" validation error
-- Account locks after 3 consecutive failed login attempts
-"""
+# The example the README tells people to try, rather than a second copy of it
+# that can drift.
+LOGIN_STORY = (Path(__file__).resolve().parent.parent / "examples" / "login_story.txt").read_text()
 
 
 HAS_KEY = bool(os.environ.get("GROQ_API_KEY") or os.environ.get("OPENROUTER_API_KEY"))
@@ -44,7 +38,7 @@ needs_key = pytest.mark.skipif(
 
 
 @pytest.fixture(scope="module")
-def real_suite() -> TestSuite:
+def real_suite():
     """One live call shared by every integration test in this module."""
     if not HAS_KEY:
         pytest.skip("no API key set")
@@ -57,50 +51,46 @@ def real_suite() -> TestSuite:
 
 @needs_key
 class TestAPIOutput:
-    def test_returns_test_suite_instance(self, real_suite):
-        assert isinstance(real_suite, TestSuite)
-
     def test_feature_name_is_non_empty(self, real_suite):
-        assert len(real_suite.feature.strip()) > 0
+        assert len(real_suite["feature"].strip()) > 0
 
     def test_generates_between_3_and_7_scenarios(self, real_suite):
-        count = len(real_suite.scenarios)
+        count = len(real_suite["scenarios"])
         assert 3 <= count <= 7, f"Expected 3–7 scenarios, got {count}"
 
     def test_every_scenario_has_a_name(self, real_suite):
-        for s in real_suite.scenarios:
-            assert len(s.name.strip()) > 0
+        for s in real_suite["scenarios"]:
+            assert len(s["name"].strip()) > 0
 
     def test_every_scenario_has_at_least_one_step(self, real_suite):
-        for s in real_suite.scenarios:
-            assert len(s.steps) >= 1, f"Scenario '{s.name}' has no steps"
+        for s in real_suite["scenarios"]:
+            assert len(s["steps"]) >= 1, f"Scenario {s['name']!r} has no steps"
 
     def test_step_keywords_are_valid_gherkin(self, real_suite):
         valid = {"Given", "When", "Then", "And", "But"}
-        for s in real_suite.scenarios:
-            for step in s.steps:
-                assert step.keyword in valid, f"Bad keyword '{step.keyword}' in '{s.name}'"
+        for s in real_suite["scenarios"]:
+            for step in s["steps"]:
+                assert step["keyword"] in valid, f"bad keyword {step['keyword']!r} in {s['name']!r}"
 
     def test_has_at_least_one_pytest_case(self, real_suite):
-        assert len(real_suite.pytest_cases) >= 1
+        assert len(real_suite["pytest_cases"]) >= 1
 
     def test_all_pytest_function_names_start_with_test_(self, real_suite):
-        for tc in real_suite.pytest_cases:
-            assert tc.function_name.startswith("test_"), \
-                f"Function name must start with test_: got '{tc.function_name}'"
+        for tc in real_suite["pytest_cases"]:
+            assert tc["function_name"].startswith("test_"), \
+                f"function name must start with test_: got {tc['function_name']!r}"
 
     def test_all_pytest_function_names_are_snake_case(self, real_suite):
-        for tc in real_suite.pytest_cases:
-            name = tc.function_name
-            assert name == name.lower() and " " not in name, \
-                f"Not snake_case: '{name}'"
+        for tc in real_suite["pytest_cases"]:
+            name = tc["function_name"]
+            assert name == name.lower() and " " not in name, f"not snake_case: {name!r}"
 
     def test_each_pytest_case_has_a_docstring(self, real_suite):
-        for tc in real_suite.pytest_cases:
-            assert len(tc.docstring.strip()) > 0
+        for tc in real_suite["pytest_cases"]:
+            assert len(tc["docstring"].strip()) > 0
 
     def test_coverage_notes_are_present(self, real_suite):
-        assert len(real_suite.coverage_notes.strip()) > 10
+        assert len(real_suite["coverage_notes"].strip()) > 10
 
 
 # ---------------------------------------------------------------------------
@@ -125,13 +115,13 @@ class TestGherkinOutput:
 
     def test_feature_name_appears_in_output(self, real_suite):
         gherkin = suite_to_gherkin(real_suite)
-        assert real_suite.feature in gherkin
+        assert real_suite["feature"] in gherkin
 
     def test_all_scenario_names_appear_in_output(self, real_suite):
         gherkin = suite_to_gherkin(real_suite)
-        for scenario in real_suite.scenarios:
-            assert scenario.name in gherkin, \
-                f"Scenario '{scenario.name}' missing from Gherkin output"
+        for scenario in real_suite["scenarios"]:
+            assert scenario["name"] in gherkin, \
+                f"scenario {scenario['name']!r} missing from the Gherkin output"
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +140,8 @@ class TestPytestOutput:
 
     def test_all_function_names_present_in_output(self, real_suite):
         code = suite_to_pytest(real_suite)
-        for tc in real_suite.pytest_cases:
-            assert tc.function_name in code
+        for tc in real_suite["pytest_cases"]:
+            assert tc["function_name"] in code
 
     def test_output_contains_docstrings(self, real_suite):
         code = suite_to_pytest(real_suite)
@@ -166,8 +156,12 @@ class TestPytestOutput:
 class TestErrorHandling:
     """These patch the transport, so they run with no key and no network."""
 
-    def test_invalid_json_raises_value_error(self):
-        """Generator must raise ValueError when the LLM returns non-JSON."""
+    def test_unparseable_json_is_reported(self):
+        """Every provider failing on bad JSON surfaces as one RuntimeError.
+
+        The retry loop catches the ValueError and tries again, so what a caller
+        sees is the exhausted chain, with the underlying reason in the message.
+        """
         bad = MagicMock()
         bad.choices = [MagicMock(message=MagicMock(content="not json at all {{"))]
         with patch("app.generator._client") as build:
@@ -194,5 +188,5 @@ class TestErrorHandling:
         with patch("app.generator._client") as build:
             build.return_value.chat.completions.create.return_value = mock_resp
             result = generate_test_suite("test story", api_key="fake")
-        assert isinstance(result, TestSuite)
-        assert result.feature == "Login"
+        assert result["feature"] == "Login"
+        assert result["scenarios"][0]["tags"] == []

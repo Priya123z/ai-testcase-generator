@@ -21,8 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from app.generator import suite_to_gherkin, suite_to_pytest
-from app.models import TestSuite
+from app.generator import check_suite, suite_to_gherkin, suite_to_pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_JS = ROOT / "site" / "app.js"
@@ -31,7 +30,7 @@ SAMPLE = ROOT / "site" / "samples" / "login.json"
 needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 
 
-def run_js(fn: str, payload: dict) -> str:
+def run_js(fn, payload):
     """Pull the two serialisers out of app.js and run them without a DOM."""
     src = APP_JS.read_text()
     start = src.index("// Mirrors suite_to_gherkin")
@@ -49,7 +48,7 @@ def run_js(fn: str, payload: dict) -> str:
     return out.stdout
 
 
-def js_prompt() -> str:
+def js_prompt():
     """The system prompt as it is written in site/app.js."""
     src = APP_JS.read_text()
     return src.split("const SYSTEM_PROMPT = `", 1)[1].split("`;", 1)[0]
@@ -73,17 +72,17 @@ def sample():
 def test_saved_answer_is_a_valid_suite(sample):
     # The no-key path is what most visitors see. If this file drifts from the
     # model the page expects, the demo silently renders nothing.
-    suite = TestSuite(**sample)
-    assert suite.feature
-    assert suite.scenarios
-    assert suite.pytest_cases
+    suite = check_suite(sample)
+    assert suite["feature"]
+    assert suite["scenarios"]
+    assert suite["pytest_cases"]
 
 
 @needs_node
 def test_gherkin_matches_python(sample):
-    assert run_js("toGherkin", sample) == suite_to_gherkin(TestSuite(**sample))
+    assert run_js("toGherkin", sample) == suite_to_gherkin(check_suite(sample))
 
 
 @needs_node
 def test_pytest_matches_python(sample):
-    assert run_js("toPytest", sample) == suite_to_pytest(TestSuite(**sample))
+    assert run_js("toPytest", sample) == suite_to_pytest(check_suite(sample))
