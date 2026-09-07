@@ -137,10 +137,25 @@ Groq is the primary provider. A free key takes about a minute and needs no card:
 GROQ_API_KEY=gsk_your_key_here
 ```
 
-The free tier allows 1000 requests a day and supports a real JSON mode, which
-is why it is the default. If you also set `OPENROUTER_API_KEY` it is tried when
-Groq is unavailable. Free tiers rate limit without warning, which is why there
-is a fallback and why each provider gets a few attempts.
+Groq's free tier supports a real JSON mode, which is why it is the default. Its
+published limits are 30 requests a minute and 1000 a day, but requests are not
+what runs out. **Tokens are: 8,000 a minute and 200,000 a day.** One generated
+suite costs roughly 3,000 tokens, so the real ceiling is about sixty runs a day
+and two or three a minute, nowhere near a thousand.
+
+That is worth knowing before you point a test suite at it. Running this
+repository's integration tests repeatedly will exhaust a day's tokens, and when
+that happens every model on the key returns 429 and the integration tests error
+rather than skip. Nothing is wrong; the budget is simply spent until it resets.
+
+Set `OPENROUTER_API_KEY` as well and it is tried when Groq is unavailable. It is
+the only thing that helps once a Groq day is spent.
+
+Within Groq, a rate-limited model is not retried: asking the same model again
+inside the same minute cannot succeed, so the next smaller model is tried
+instead, `gpt-oss-20b` and then `qwen3.8-27b`. A model that returns malformed
+JSON *is* retried once, because resampling usually fixes that. The two failures
+need opposite responses, which is why they are told apart.
 
 Override the model per call. It has to be a slug the provider still serves and
 that supports JSON mode, so check

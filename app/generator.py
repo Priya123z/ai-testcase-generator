@@ -9,24 +9,35 @@ from .prompts import SYSTEM_PROMPT_V1
 
 load_dotenv()
 
-ATTEMPTS_PER_PROVIDER = 3
+ATTEMPTS_PER_MODEL = 2
 
 # Groq first. Its free tier allows 1000 requests a day against OpenRouter's 50, and
 # it supports a real JSON mode so the response does not have to be scraped out of
 # prose. Both speak the OpenAI wire format, so one client class covers them.
+#
+# Each provider lists smaller models to fall back to. What actually runs out on
+# the free tier is tokens per minute, not requests per day, and asking the same
+# model again inside the same minute cannot succeed: three attempts at the
+# 120b model is three guaranteed 429s. A smaller model has its own allowance.
 PROVIDERS = {
     "groq": {
         "base_url": "https://api.groq.com/openai/v1",
         "env": "GROQ_API_KEY",
         "model": "openai/gpt-oss-120b",
+        "fallbacks": ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"],
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "env": "OPENROUTER_API_KEY",
         # A free slug: the paid ones stop working once an account hits zero balance.
         "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "fallbacks": [],
     },
 }
+
+
+def _is_rate_limit(exc):
+    return "429" in str(exc) or "rate limit" in str(exc).lower()
 
 
 def available_providers(api_key=None):
@@ -124,15 +135,22 @@ def generate_test_suite(user_story, model=None, api_key=None):
 
     errors = []
     for provider, key in providers:
-        # The requested shape nests generated code inside JSON strings, so a model
-        # occasionally emits a stray brace and strict JSON mode rejects the whole
-        # response. Sampling again usually produces valid output; this is a property
-        # of the model, not of the prompt.
-        for attempt in range(ATTEMPTS_PER_PROVIDER):
-            try:
-                return _generate_with(provider, key, user_story, model)
-            except Exception as exc:
-                errors.append(f"{provider} attempt {attempt + 1}: {_short(exc)}")
+        # An explicit model gets tried on its own; otherwise walk the provider's
+        # preferred model and then its smaller ones.
+        candidates = [model] if model else [PROVIDERS[provider]["model"]] + PROVIDERS[provider]["fallbacks"]
+
+        for candidate in candidates:
+            # The requested shape nests generated code inside JSON strings, so a
+            # model occasionally emits a stray brace and strict JSON mode rejects
+            # the whole response. Sampling again usually fixes that; it is a
+            # property of the model, not of the prompt.
+            for attempt in range(ATTEMPTS_PER_MODEL):
+                try:
+                    return _generate_with(provider, key, user_story, candidate)
+                except Exception as exc:
+                    errors.append(f"{provider}/{candidate} attempt {attempt + 1}: {_short(exc)}")
+                    if _is_rate_limit(exc):
+                        break  # this model is out of allowance; a retry cannot help
 
     raise RuntimeError("Every provider failed. " + "; ".join(errors))
 
