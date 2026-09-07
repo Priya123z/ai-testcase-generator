@@ -51,9 +51,10 @@ Requirement (plain text)
    the negative paths and the edge cases, with a matching Pytest function
    skeleton for each.
 3. `check_suite` rejects it if a field is missing, a step keyword is not
-   Gherkin, or a function name is one pytest will never collect. So you never
-   get a `.feature` file that will not parse or a test module that collects
-   nothing.
+   Gherkin, a docstring is blank, or a function name is one pytest will never
+   collect. So you never get a `.feature` file that will not parse, or a test
+   module that collects nothing, or the word `undefined` where a docstring
+   should be.
 4. Download the `.feature` or the `.py`, or copy the JSON.
 
 That check is the part that makes this usable rather than a toy. A model that
@@ -163,27 +164,35 @@ exact text, because the output is not deterministic, and asserting on exact
 strings against a live model gives you a suite that fails for no reason. All
 nineteen share one API call.
 
-There is a third group. The browser demo carries its own copy of the system
-prompt and of the two serialisers, because that page has no Python to call.
-`tests/test_browser_parity.py` pins all three: it runs the JavaScript and Python
-serialisers over the same suite and requires byte-identical output, and it
-compares the two copies of the prompt character for character.
+There is a third group, and it is the one worth reading. The browser demo carries
+its own copy of the system prompt, of the two serialisers, and of the validator,
+because that page has no Python to call. `tests/test_browser_parity.py` pins all
+three.
 
-That last check was not hypothetical. The two prompts had already drifted, and
-the JavaScript one had lost the clause telling the model to name what it chose
-*not* to cover, so the same requirement produced measurably different output
-depending on which path a visitor happened to take. Nothing caught it, because
-nothing was comparing them. Now something is.
+The prompt is compared character for character, and the serialisers are run over
+the same suite and required to produce byte-identical output. The validator is
+pinned differently, by behaviour: both copies are fed the same fourteen malformed
+suites and have to agree on every one. Comparing their source would prove
+nothing, because they are not meant to read alike, only to decide alike.
+
+Neither check is hypothetical. The two prompts had already drifted, and the
+JavaScript one had lost the clause telling the model to name what it chose *not*
+to cover, so the same requirement produced measurably different output depending
+on which path a visitor took. And the validators had drifted three ways: the
+JavaScript accepted a suite with no coverage notes, one with a step that had no
+text, and one with no Pytest cases at all. Each of those reaches a visitor as a
+half-empty answer rather than an error. Nothing was comparing them. Now something is.
 
 ```bash
-pytest                        # no key:   6 passed, 19 skipped
-GROQ_API_KEY=gsk_... pytest   # with key: 25 passed
+pytest                        # no key:            21 passed, 19 skipped
+GROQ_API_KEY=gsk_... pytest   # with key:          40 passed
+                              # without node too:   4 passed, 36 skipped
 ```
 
-The two serialiser comparisons need `node` and skip without it, so a clean clone
-still passes; both counts above are with it installed. The prompt comparison
-needs nothing and always runs. CI installs node so the parity check it advertises
-is actually enforced there.
+Everything that runs JavaScript needs `node` and skips without it, so a clean
+clone still passes either way. The prompt comparison needs nothing and always
+runs. CI installs node, so the parity this advertises is actually enforced there
+rather than quietly skipped.
 
 ### Making CI run the live tests
 
@@ -240,7 +249,7 @@ ai-testcase-generator/
 |  '- samples/login.json  a real answer, shown when there is no key
 |- tests/
 |  |- test_generator.py       21 tests: 2 contract, 19 integration
-|  '- test_browser_parity.py  4 tests: the JS and Python copies must match
+|  '- test_browser_parity.py  19 tests: the JS and Python copies must match
 |- examples/login_story.txt   the story the integration tests use
 |- .github/workflows/
 |  |- tests.yml

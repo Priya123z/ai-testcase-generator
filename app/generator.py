@@ -30,7 +30,11 @@ PROVIDERS = {
 
 
 def available_providers(api_key=None):
-    """A supplied key is treated as a Groq key, which is what the UI passes through."""
+    """A key passed in is treated as a Groq key, and used on its own.
+
+    That is the bring-your-own-key path: a caller with their own key should not
+    silently fall through to mine.
+    """
     if api_key:
         return [("groq", api_key)]
     return [(name, os.environ.get(cfg["env"])) for name, cfg in PROVIDERS.items()
@@ -91,8 +95,16 @@ def check_suite(data):
         name = tc.get("function_name", "")
         if not re.fullmatch(r"test_[a-z0-9_]*", name or ""):
             raise ValueError(f"{name!r} is not a snake_case test name")
+        # Both serialisers write the docstring straight into the generated file,
+        # so a missing one is a KeyError here and the string "undefined" in the
+        # browser. Neither validator used to look for it.
+        if not str(tc.get("docstring", "")).strip():
+            raise ValueError(f"{name} has no docstring")
         if not isinstance(tc.get("steps"), list) or not tc["steps"]:
             raise ValueError(f"{name} has no steps")
+        for st in tc["steps"]:
+            if not str(st.get("code", "")).strip():
+                raise ValueError(f"a step in {name} has no code")
 
     return data
 

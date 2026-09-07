@@ -168,6 +168,9 @@ function validate(s) {
   if (!s || typeof s.feature !== "string" || !s.feature.trim()) {
     throw new Error("The model did not return a feature name.");
   }
+  if (!s.coverage_notes?.trim()) {
+    throw new Error("The model did not say what it left out of scope.");
+  }
   if (!Array.isArray(s.scenarios) || !s.scenarios.length) {
     throw new Error("The model returned no scenarios.");
   }
@@ -180,11 +183,28 @@ function validate(s) {
       if (!allowed.includes(st.keyword)) {
         throw new Error(`"${st.keyword}" is not a Gherkin keyword.`);
       }
+      if (!st.text?.trim()) {
+        throw new Error(`A step in "${sc.name}" has no text.`);
+      }
     }
   }
-  for (const tc of s.pytest_cases || []) {
+  if (!Array.isArray(s.pytest_cases) || !s.pytest_cases.length) {
+    throw new Error("The model returned no Pytest cases.");
+  }
+  for (const tc of s.pytest_cases) {
     if (!/^test_[a-z0-9_]*$/.test(tc.function_name || "")) {
       throw new Error(`"${tc.function_name}" is not a snake_case test name.`);
+    }
+    // Written straight into the generated file below, so a missing one shows up
+    // as the literal string "undefined" in someone's test suite.
+    if (!tc.docstring?.trim()) {
+      throw new Error(`"${tc.function_name}" has no docstring.`);
+    }
+    if (!Array.isArray(tc.steps) || !tc.steps.length) {
+      throw new Error(`"${tc.function_name}" has no steps.`);
+    }
+    for (const st of tc.steps) {
+      if (!st.code?.trim()) throw new Error(`A step in "${tc.function_name}" has no code.`);
     }
   }
   return s;
