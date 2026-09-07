@@ -41,7 +41,7 @@ Requirement (plain text)
         |
    Groq: openai/gpt-oss-120b, JSON mode
         |  falls back to OpenRouter if Groq is unavailable
-   Pydantic TestSuite validation
+   check_suite()
         |  invalid structure raises here, not three files later
    Gherkin .feature  |  Pytest .py  |  raw JSON
 ```
@@ -50,14 +50,16 @@ Requirement (plain text)
 2. The model writes between three and seven scenarios covering the happy path,
    the negative paths and the edge cases, with a matching Pytest function
    skeleton for each.
-3. `TestSuite` validates every field. A hallucinated structure is rejected
-   before it reaches you, so you never get a `.feature` file that will not
-   parse.
+3. `check_suite` rejects it if a field is missing, a step keyword is not
+   Gherkin, or a function name is one pytest will never collect. So you never
+   get a `.feature` file that will not parse or a test module that collects
+   nothing.
 4. Download the `.feature` or the `.py`, or copy the JSON.
 
-The Pydantic step is the part that makes this usable rather than a toy. A model
-that returns almost-right JSON produces test files that fail in confusing ways
-much later; failing at the boundary is worth the extra class.
+That check is the part that makes this usable rather than a toy. A model that
+returns almost-right JSON produces test files that fail in confusing ways much
+later; failing at the boundary is worth twenty lines. The browser demo runs the
+same checks in JavaScript, so both paths accept exactly the same answers.
 
 ---
 
@@ -90,7 +92,7 @@ Feature: User Login
 
 ---
 
-## Three ways to run it
+## Two ways to run it
 
 **1. In your browser, nothing installed.**
 [priya123z.github.io/ai-testcase-generator](https://priya123z.github.io/ai-testcase-generator/)
@@ -121,20 +123,6 @@ from app.generator import generate_test_suite, suite_to_gherkin, suite_to_pytest
 suite = generate_test_suite(open("examples/login_story.txt").read())
 print(suite_to_gherkin(suite))
 ```
-
-**3. As a local app**, for a team that wants a form rather than an import:
-
-```bash
-pip install -r requirements-ui.txt
-cp .env.example .env          # then put a Groq key in it, see below
-streamlit run app/streamlit_app.py
-```
-
-Open http://localhost:8501, paste a requirement, press **Generate**.
-
-`streamlit` is in `requirements-ui.txt` rather than `requirements.txt` on
-purpose. Only `app/streamlit_app.py` imports it, and pulling a web framework in
-order to run a test suite that never touches one is a slow install for nothing.
 
 ## Getting a key
 
@@ -173,7 +161,7 @@ on properties that hold for *any* sensible answer: step keywords are valid
 Gherkin, function names are snake_case, the scenario count is in range. Not on
 exact text, because the output is not deterministic, and asserting on exact
 strings against a live model gives you a suite that fails for no reason. All
-twenty share one API call.
+nineteen share one API call.
 
 There is a third group. The browser demo carries its own copy of the system
 prompt and of the two serialisers, because that page has no Python to call.
@@ -188,12 +176,14 @@ depending on which path a visitor happened to take. Nothing caught it, because
 nothing was comparing them. Now something is.
 
 ```bash
-pytest                        # no key:   6 passed, 20 skipped
-GROQ_API_KEY=gsk_... pytest   # with key: 26 passed
+pytest                        # no key:   6 passed, 19 skipped
+GROQ_API_KEY=gsk_... pytest   # with key: 25 passed
 ```
 
-The serialiser comparisons need `node` and skip without it, so a clean clone
-still passes. The prompt comparison needs nothing and always runs.
+The two serialiser comparisons need `node` and skip without it, so a clean clone
+still passes; both counts above are with it installed. The prompt comparison
+needs nothing and always runs. CI installs node so the parity check it advertises
+is actually enforced there.
 
 ### Making CI run the live tests
 
@@ -209,11 +199,11 @@ split.
 
 ---
 
-## Prompt versioning
+## Where the prompt lives
 
-`app/prompts.py` holds versioned system prompts (`SYSTEM_PROMPT_V1`). Nothing
-else in the Python codebase knows what the prompt says, so changing strategy is
-a one-file change and you can iterate on quality without touching modules.
+`app/prompts.py` holds it, as `SYSTEM_PROMPT_V1`. Nothing else in the Python
+codebase knows what the prompt says, so changing strategy is a one-file change
+and you can iterate on quality without touching modules.
 
 The one exception is `site/app.js`, which needs its own copy because the browser
 has no Python to import. Change the prompt and you have to change both, and
@@ -228,6 +218,9 @@ design. It is good at the happy path and the obvious negative paths, and it
 misses edge cases that need business context. Every answer carries a
 `coverage_notes` field that says what it left out; read it.
 
+The daily budget behind the no-key path lives in the Worker, in the portfolio
+repository, not here. This repository cannot change it or report on it.
+
 Two runs on the same requirement will differ. That is the nature of the thing,
 and it is why the tests assert on properties rather than output.
 
@@ -238,27 +231,22 @@ and it is why the tests assert on properties rather than output.
 ```
 ai-testcase-generator/
 |- app/
-|  |- generator.py        provider fallback, retries, JSON parse, serialisers
-|  |- models.py           Pydantic models (TestSuite, GherkinScenario, ...)
-|  |- prompts.py          versioned system prompts
-|  '- streamlit_app.py    the web UI
+|  |- generator.py        providers, retries, JSON parse, check_suite, serialisers
+|  '- prompts.py          the system prompt
 |- site/                  the browser demo, published to GitHub Pages
 |  |- index.html
 |  |- app.js              talks to Groq directly; mirrors the two serialisers
 |  |- style.css
 |  '- samples/login.json  a real answer, shown when there is no key
 |- tests/
-|  |- test_generator.py       22 tests: 2 contract, 20 integration
+|  |- test_generator.py       21 tests: 2 contract, 19 integration
 |  '- test_browser_parity.py  4 tests: the JS and Python copies must match
-|- examples/
-|  |- login_story.txt
-|  '- checkout_story.txt
+|- examples/login_story.txt   the story the integration tests use
 |- .github/workflows/
 |  |- tests.yml
 |  '- pages.yml           publishes site/
 |- .env.example
-|- requirements.txt       library + tests
-'- requirements-ui.txt    adds streamlit
+'- requirements.txt
 ```
 
 MIT. Built by Priya Bhagoriya: [portfolio](https://priya123z.github.io/) · [LinkedIn](https://linkedin.com/in/priya-bhagoriya)
