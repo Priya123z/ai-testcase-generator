@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The only workflow here that could not be re-run from the Actions tab, which
+  # meant checking whether the stored key still worked needed a commit.
+  workflow_dispatch:
 
 jobs:
   test:

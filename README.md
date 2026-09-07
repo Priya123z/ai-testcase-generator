@@ -142,10 +142,13 @@ is why it is the default. If you also set `OPENROUTER_API_KEY` it is tried when
 Groq is unavailable. Free tiers rate limit without warning, which is why there
 is a fallback and why each provider gets a few attempts.
 
-Override the model per call:
+Override the model per call. It has to be a slug the provider still serves and
+that supports JSON mode, so check
+[Groq's model list](https://console.groq.com/docs/models) rather than trusting an
+example: this one named a model Groq had retired, and the call came back 404.
 
 ```python
-suite = generate_test_suite(story, model="llama-3.3-70b-versatile")
+suite = generate_test_suite(story, model="openai/gpt-oss-20b")
 ```
 
 ---
